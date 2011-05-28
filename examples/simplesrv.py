@@ -22,7 +22,7 @@ class SampleFs(py9p.Server):
         rootdir.children = []
         rootdir.type = 0
         rootdir.dev = 0
-        rootdir.mode = 0755
+        rootdir.mode = 020000000755
         rootdir.atime = rootdir.mtime = int(time.time())
         rootdir.length = 0
         rootdir.name = '/'
@@ -37,11 +37,13 @@ class SampleFs(py9p.Server):
         f.qid = py9p.Qid(0, 0, py9p.hash8(f.name))
         f.length = 1024
         f.parent = rootdir
+        f.mode = 0644
         self.root.children.append(f)
         f = copy.copy(f)
         f.name = 'sample2'
         f.length = 8192
         f.qid = py9p.Qid(0, 0, py9p.hash8(f.name))
+        f.mode = 0644
         self.root.children.append(f)
 
         self.files[self.root.qid.path] = self.root
@@ -81,6 +83,12 @@ class SampleFs(py9p.Server):
 
         srv.respond(req, "can't find %s"%req.ifcall.wname[0])
         return
+
+    def stat(self, srv, req):
+        if not self.files.has_key(req.fid.qid.path):
+            raise py9p.ServerError("unknown file")
+        req.ofcall.stat.append(self.files[req.fid.qid.path])
+        srv.respond(req, None)
 
     def read(self, srv, req):
         if not self.files.has_key(req.fid.qid.path):
