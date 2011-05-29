@@ -16,6 +16,10 @@
 # 	along with Connexion; if not, write to the Free Software
 # 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+ifndef python
+	python := "python"
+endif
+
 ifdef root
 	override root := "--root=${root}"
 endif
@@ -36,7 +40,10 @@ manifest: clean
 	find . ! -name setup.py -a ! -name Makefile -a ! -wholename '*.svn*' -a ! -name 'dump' >MANIFEST
 
 dist: manifest
-	python setup.py sdist
+	${python} setup.py sdist
+
+build:
+	:
 
 install: manifest
-	python setup.py install ${root} ${lib}
+	${python} setup.py install ${root} ${lib}
