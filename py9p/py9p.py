@@ -295,7 +295,7 @@ class Dir(object):
     # muidnum       numeric muid
     # *ext          extended info
 
-    def __init__(self, dotu=0, *args):
+    def __init__(self, dotu=0, *args, **kwargs):
         self.dotu = dotu
         # the dotu arguments will be added separately. this is not
         # straightforward but is cleaner.
@@ -317,12 +317,16 @@ class Dir(object):
                     self.uidnum,
                     self.gidnum,
                     self.muidnum) = args[11:15]
-            else :
-                (self.extension,
-                    self.uidnum,
-                    self.gidnum,
-                    self.muidnum) = "", UIDUNDEF, UIDUNDEF, UIDUNDEF
-                
+
+        if len(kwargs.keys()):
+            for i in kwargs.keys():
+                setattr(self,i,kwargs[i])
+
+        if dotu == 0:
+            (self.extension,
+                self.uidnum,
+                self.gidnum,
+                self.muidnum) = "", UIDUNDEF, UIDUNDEF, UIDUNDEF
 
     def tolstr(self, dirname=''):
         if dirname != '':
