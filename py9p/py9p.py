@@ -322,7 +322,7 @@ class Dir(object):
             for i in kwargs.keys():
                 setattr(self,i,kwargs[i])
 
-        if dotu == 0:
+        if not dotu:
             (self.extension,
                 self.uidnum,
                 self.gidnum,
