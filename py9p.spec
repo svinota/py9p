@@ -1,6 +1,4 @@
-%define pprefix python-module
-
-Name: connexion
+Name: python-module-py9p
 Version: 1.0
 Release: alt1
 Summary: Pure Python implementation of 9P protocol (Plan9)
