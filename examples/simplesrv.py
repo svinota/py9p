@@ -100,8 +100,11 @@ class SampleFs(py9p.Server):
             for x in f.children:
                 req.ofcall.stat.append(x)
         elif f.name == 'sample1':
-            buf = '%d\n' % time.time()
-            req.ofcall.data = buf[:req.ifcall.count]
+            if req.ifcall.offset == 0:
+                buf = 'test\n'
+                req.ofcall.data = buf[:req.ifcall.count]
+            else:
+                req.ofcall.data = ''
         elif f.name == 'sample2' :
             buf = 'The time is now %s. thank you for asking.\n' % time.asctime(time.localtime(time.time()))
             if req.ifcall.offset > len(buf):
