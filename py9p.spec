@@ -1,6 +1,6 @@
 Name: python-module-py9p
 Version: 1.0
-Release: alt1
+Release: alt2
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Python
@@ -27,6 +27,9 @@ in Plan9, 9P can be used also for composite file access, RPC etc.
 %{python_sitelibdir}/py9p*
 
 %changelog
+* Wed Aug 24 2011 Peter V. Saveliev <peet@altlinux.org> 1.0-alt2
+- file access mode for AF_UNIX socket
+
 * Thu Aug 18 2011 Peter V. Saveliev <peet@altlinux.org> 1.0-alt1
 - standalone git repo, version bump
 
