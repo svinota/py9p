@@ -421,6 +421,7 @@ class Server(object):
             except OSError :
                 pass
             self.sock.bind(self.host)
+            os.chmod(self.host,self.port)
         else :
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
