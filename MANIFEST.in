@@ -1,0 +1,3 @@
+include python-py9p.spec
+include README*
+include LICENSE

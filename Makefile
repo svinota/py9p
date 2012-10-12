@@ -1,24 +1,12 @@
-# 	Copyright (c) 2008-2011 Peter V. Saveliev
+# 	Copyright (c) 2012 Peter V. Saveliev
 #
-# 	This file is part of Connexion project.
+# 	This file is part of py9p project.
 #
-# 	Connexion is free software; you can redistribute it and/or modify
-# 	it under the terms of the GNU General Public License as published by
-# 	the Free Software Foundation; either version 3 of the License, or
-# 	(at your option) any later version.
-#
-# 	Connexion is distributed in the hope that it will be useful,
-# 	but WITHOUT ANY WARRANTY; without even the implied warranty of
-# 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# 	GNU General Public License for more details.
-#
-# 	You should have received a copy of the GNU General Public License
-# 	along with Connexion; if not, write to the Free Software
-# 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+# 	For license agreement, please look into LICENSE file.
 
-ifndef python
-	python := "python"
-endif
+version ?= "1.0"
+release ?= "1.0.1"
+python ?= "python"
 
 ifdef root
 	override root := "--root=${root}"
@@ -36,14 +24,33 @@ clean:
 	rm -rf dist build MANIFEST
 	find . -name "*pyc" -exec rm -f "{}" \;
 
-manifest: clean
-	find . ! -name setup.py -a ! -name Makefile -a ! -wholename '*.svn*' -a ! -name 'dump' >MANIFEST
+check:
+	for i in py9p examples; \
+		do pep8 $$i || exit 1; \
+		pyflakes $$i || exit 1; \
+		done
+	2to3 py9p
 
-dist: manifest
+setup.py:
+	gawk -v version=${version} -v release=${release} -v flavor=${flavor}\
+		-f configure.gawk $@.in >$@
+
+clean-version:
+	rm -f setup.py
+
+update-version: setup.py
+
+force-version: clean-version update-version
+
+docs: clean force-version
+	make -C docs html
+
+dist: clean force-version
 	${python} setup.py sdist
 
-build:
-	:
+rpm: dist
+	rpmbuild -ta dist/*tar.gz
 
-install: manifest
+install: clean force-version
 	${python} setup.py install ${root} ${lib}
+
