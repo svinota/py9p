@@ -10,7 +10,7 @@ setup(name='py9p',
     author_email='aamirtch@ucalgary.ca',
     maintainer='Peter V. Saveliev',
     maintainer_email='peet@redhat.com',
-    url='http://grid.ucalgary.ca',
+    url='https://github.com/svinota/py9p',
     license="MIT",
     packages=[
         'py9p'

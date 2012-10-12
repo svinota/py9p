@@ -4,11 +4,13 @@ from distutils.core import setup
 
 # bump version
 setup(name='py9p',
-    version='0.7.1',
+    version='1.0.1',
     description='9P Protocol Implementation',
     author='Andrey Mirtchovski',
     author_email='aamirtch@ucalgary.ca',
-    url='http://grid.ucalgary.ca',
+    maintainer='Peter V. Saveliev',
+    maintainer_email='peet@redhat.com',
+    url='https://github.com/svinota/py9p',
     license="MIT",
     packages=[
         'py9p'
