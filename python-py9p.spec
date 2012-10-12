@@ -1,6 +1,6 @@
 Name: python-module-py9p
-Version: 1.0
-Release: alt2.1
+Version: 1.0.1
+Release: alt1
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Python
@@ -8,25 +8,30 @@ URL: http://mirtchovski.com/p9/py9p
 
 BuildArch: noarch
 BuildPreReq: python-devel rpm-build-python
-
-Source: %name-%version.tar
+Source: py9p-%version.tar.gz
 
 %description
 Protocol 9P is developed for Plan9 operating system from Bell Labs.
 It is used for remote file access, and since files are key objects
 in Plan9, 9P can be used also for composite file access, RPC etc.
 
+This library provides low-level 9p2000.u API. For high-level look
+into python-module-pyvfs.
+
 %prep
-%setup
+%setup -q -n py9p-%{version}
 
 %install
-%makeinstall python=%{__python} root=%buildroot lib=%{python_sitelibdir}
+%{__python} setup.py install --root=%buildroot --install-lib=%{python_sitelibdir}
 
 %files
-
+%doc README* LICENSE
 %{python_sitelibdir}/py9p*
 
 %changelog
+* Fri Oct 12 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.1-alt1
+- Rebuild from new repo layout
+
 * Thu Oct 20 2011 Vitaly Kuznetsov <vitty@altlinux.ru> 1.0-alt2.1
 - Rebuild with Python-2.7
 

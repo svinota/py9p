@@ -1,1 +1,1 @@
-tar: .
+tar.gz: . name=py9p-@version@
