@@ -8,8 +8,7 @@ import sys
 import socket
 import select
 import traceback
-
-from marshal9p import *
+import marshal9p
 
 IOHDRSZ = 24
 PORT = 564
@@ -17,19 +16,34 @@ PORT = 564
 cmdName = {}
 
 
-def _enumCmd(*args):
-    num = 100
-    ns = globals()
-    for name in args:
-        cmdName[num] = "T%s" % name
-        cmdName[num + 1] = "R%s" % name
-        ns["T%s" % name] = num
-        ns["R%s" % name] = num + 1
-        num += 2
-    ns["Tmax"] = num
-
-_enumCmd("version", "auth", "attach", "error", "flush", "walk", "open",
-        "create", "read", "write", "clunk", "remove", "stat", "wstat")
+Tversion = 100
+Rversion = 101
+Tauth = 102
+Rauth = 103
+Tattach = 104
+Rattach = 105
+Terror = 106
+Rerror = 107
+Tflush = 108
+Rflush = 109
+Twalk = 110
+Rwalk = 111
+Topen = 112
+Ropen = 113
+Tcreate = 114
+Rcreate = 115
+Tread = 116
+Rread = 117
+Twrite = 118
+Rwrite = 119
+Tclunk = 120
+Rclunk = 121
+Tremove = 122
+Rremove = 123
+Tstat = 124
+Rstat = 125
+Twstat = 126
+Rwstat = 127
 
 version = '9P2000'
 versionu = '9P2000.u'
@@ -199,7 +213,7 @@ class Sock(object):
         self.reqs = {}  # reqs are per client
         self.uname = None
         self.closing = False
-        self.marshal = Marshal9P(dotu=dotu, chatty=chatty)
+        self.marshal = marshal9p.Marshal9P(dotu=dotu, chatty=chatty)
 
     def send(self, x):
         self.marshal.send(self, x)
@@ -692,7 +706,7 @@ class Server(object):
     def tversion(self, req):
         if req.ifcall.version[0:2] != '9P':
             req.ofcall.version = "unknown"
-            self.respond(r, None)
+            self.respond(req, None)
             return
 
         if req.ifcall.version == '9P2000.u':
@@ -1153,7 +1167,7 @@ class Client(object):
         return self._rpc(fcall)
 
     def _wstat(self, fid, stats):
-        fcall = Fcall(Wstat)
+        fcall = Fcall(Twstat)
         fcall.fid = fid
         fcall.stats = stats
         return self._rpc(fcall)
@@ -1299,7 +1313,7 @@ class Client(object):
             buf = self.read(self.msize)
             if len(buf) == 0:
                 break
-            p9 = Marshal9P()
+            p9 = marshal9p.Marshal9P()
             p9.setBuf(buf)
             fcall = Fcall(Rstat)
             try:

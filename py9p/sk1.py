@@ -10,6 +10,7 @@ import random
 from Crypto.Cipher import DES
 
 import py9p
+import marshal9p
 
 
 class Error(py9p.Error):
@@ -118,7 +119,7 @@ def randChars(n):
     return "".join([chr(random.randint(0, 255)) for x in xrange(n)])
 
 
-class Marshal(py9p.Marshal):
+class Marshal(marshal9p.Marshal):
     def __init__(self):
         self.ks = None
         self.kn = None
