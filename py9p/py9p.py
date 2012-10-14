@@ -912,18 +912,18 @@ class Server(object):
         req.fid = req.sock.getfid(req.ifcall.fid)
         if not req.fid:
             return self.respond(req, Eunknownfid)
-        if req.fid.omode == -1:
-            return self.respond(req, Eopen)
         if req.ifcall.count < 0:
             return self.respond(req, Ebotch)
         if req.ifcall.offset < 0 or ((req.fid.qid.type & QTDIR) and \
                 (req.ifcall.offset != 0) and \
                 (req.ifcall.offset != req.fid.diroffset)):
             return self.respond(req, Ebadoffset)
-
         if req.fid.qid.type & QTAUTH and self.authfs:
             self.authfs.read(self, req)
             return
+        # auth Tread goes w/o omode, there was no open()
+        if req.fid.omode == -1:
+            return self.respond(req, Eopen)
 
         if req.ifcall.count > self.msize - IOHDRSZ:
             req.ifcall.count = self.msize - IOHDRSZ
@@ -955,13 +955,14 @@ class Server(object):
         req.fid = req.sock.getfid(req.ifcall.fid)
         if not req.fid:
             return self.respond(req, Eunknownfid)
-        if req.fid.omode == -1:
-            return self.respond(req, Eopen)
         if req.ifcall.count < 0 or req.ifcall.offset < 0:
             return self.respond(req, Ebotch)
         if req.fid.qid.type & QTAUTH and self.authfs:
             self.authfs.write(self, req)
             return
+        # auth Tread goes w/o omode, there was no open()
+        if req.fid.omode == -1:
+            return self.respond(req, Eopen)
 
         if req.ifcall.count > self.msize - IOHDRSZ:
             req.ifcall.count = self.msize - IOHDRSZ
