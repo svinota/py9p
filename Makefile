@@ -27,7 +27,7 @@ clean:
 check:
 	for i in py9p examples; \
 		do pep8 $$i || exit 1; \
-		pyflakes $$i || exit 1; \
+		pyflakes $$i || exit 2; \
 		done
 	2to3 py9p
 
