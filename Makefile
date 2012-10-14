@@ -25,11 +25,11 @@ clean:
 	find . -name "*pyc" -exec rm -f "{}" \;
 
 check:
-	for i in py9p examples; \
+	for i in py9p ; \
 		do pep8 $$i || exit 1; \
 		pyflakes $$i || exit 2; \
 		done
-	2to3 py9p
+	-2to3 py9p
 
 setup.py:
 	gawk -v version=${version} -v release=${release} -v flavor=${flavor}\
