@@ -19,12 +19,15 @@ import base64
 import struct
 import os
 import random
+import getpass
 import cPickle as pickle
 import Crypto.Util as util
-import Crypto.Cipher.DES3 as DES3
+from Crypto.Cipher import DES3, AES
 from Crypto.PublicKey import RSA, DSA
 from Crypto.Util.randpool import RandomPool
 from Crypto.Util import number
+from Crypto.Hash import MD5
+from binascii import unhexlify
 from hashlib import md5
 
 import py9p
@@ -187,19 +190,40 @@ def strtopubkey(data):
         raise Exception('unknown key type %s' % kind)
 
 
-def strtoprivkey(data, passphrase):
+def get_key_data(salt, password, keysize):
+    keydata = ''
+    digest = ''
+    # truncate salt
+    salt = salt[:8]
+    while keysize > 0:
+        hash_obj = MD5.new()
+        if len(digest) > 0:
+            hash_obj.update(digest)
+        hash_obj.update(password)
+        hash_obj.update(salt)
+        digest = hash_obj.digest()
+        size = min(keysize, len(digest))
+        keydata += digest[:size]
+        keysize -= size
+    return keydata
+
+
+def strtoprivkey(data, password):
     kind = data[0][11: 14]
     if data[1].startswith('Proc-Type: 4,ENCRYPTED'):  # encrypted key
-        ivdata = data[2].split(',')[1][:-1]
-        iv = ''.join([chr(int(ivdata[i:i + 2], 16)) for i in
-            range(0, len(ivdata), 2)])
-        if not passphrase:
-            raise BadKeyError('encrypted key with no passphrase')
-        ba = md5(passphrase + iv).digest()
-        bb = md5(ba + passphrase + iv).digest()
-        decKey = (ba + bb)[:24]
+        if not password:
+            raise BadKeyError("password required")
+        enc_type, salt = data[2].split(": ")[1].split(",")
+        salt = unhexlify(salt.strip())
         b64Data = base64.decodestring(''.join(data[4:-1]))
-        keyData = DES3.new(decKey, DES3.MODE_CBC, iv).decrypt(b64Data)
+        if enc_type == "DES-EDE3-CBC":
+            key = get_key_data(salt, password, 24)
+            keyData = DES3.new(key, DES3.MODE_CBC, salt).decrypt(b64Data)
+        elif enc_type == "AES-128-CBC":
+            key = get_key_data(salt, password, 16)
+            keyData = AES.new(key, AES.MODE_CBC, salt).decrypt(b64Data)
+        else:
+            raise BadKeyError("unknown encryption")
         removeLen = ord(keyData[-1])
         keyData = keyData[:-removeLen]
     else:
@@ -343,8 +367,11 @@ def clientAuth(cl, fcall, uname, keyfile):
         pos[0] += fc.count
         return fc.count
 
-    # XXX here we would have to ask for privkey password
-    key = getprivkey(uname, keyfile)
+    try:
+        key = getprivkey(uname, keyfile)
+    except BadKeyError:
+        password = getpass.getpass("password: ")
+        key = getprivkey(uname, keyfile, password)
     c = pickle.loads(rd(2048))
     chal = key.decrypt(c)
     sign = key.sign(chal, '')
