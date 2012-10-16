@@ -23,6 +23,7 @@ all:
 clean:
 	rm -rf dist build MANIFEST
 	find . -name "*pyc" -exec rm -f "{}" \;
+	rm -f setup.py
 
 check:
 	for i in py9p ; \
