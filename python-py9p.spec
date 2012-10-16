@@ -1,5 +1,5 @@
 Name: python-module-py9p
-Version: 1.0.1
+Version: 1.0.2
 Release: alt1
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
@@ -29,6 +29,10 @@ into python-module-pyvfs.
 %{python_sitelibdir}/py9p*
 
 %changelog
+* Tue Oct 16 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.2-alt1
+- support AES-encrypted keys
+- fixed authfs
+ 
 * Fri Oct 12 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.1-alt1
 - Rebuild from new repo layout
 
