@@ -45,6 +45,13 @@ Rstat = 125
 Twstat = 126
 Rwstat = 127
 
+for i, k in globals().items():
+        try:
+            if (i[0] in ('T', 'R')) and isinstance(k, int):
+                cmdName[k] = i
+        except:
+            pass
+
 version = '9P2000'
 versionu = '9P2000.u'
 
