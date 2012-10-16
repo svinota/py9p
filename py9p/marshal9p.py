@@ -280,8 +280,9 @@ class Marshal9P(Marshal):
 
     def decstat(self, fcall, enclen=0):
         fcall.stat = []
-        #if enclen:
-        #    totsz = self.dec2()
+        if enclen:
+            # feed 2 bytes of total size
+            self.dec2()
         while len(self.bytes):
             size = self.dec2()
             b = self.bytes
