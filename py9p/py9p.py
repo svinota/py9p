@@ -8,8 +8,7 @@ import sys
 import socket
 import select
 import traceback
-
-from marshal9p import *
+import marshal9p
 
 IOHDRSZ = 24
 PORT = 564
@@ -17,19 +16,41 @@ PORT = 564
 cmdName = {}
 
 
-def _enumCmd(*args):
-    num = 100
-    ns = globals()
-    for name in args:
-        cmdName[num] = "T%s" % name
-        cmdName[num + 1] = "R%s" % name
-        ns["T%s" % name] = num
-        ns["R%s" % name] = num + 1
-        num += 2
-    ns["Tmax"] = num
+Tversion = 100
+Rversion = 101
+Tauth = 102
+Rauth = 103
+Tattach = 104
+Rattach = 105
+Terror = 106
+Rerror = 107
+Tflush = 108
+Rflush = 109
+Twalk = 110
+Rwalk = 111
+Topen = 112
+Ropen = 113
+Tcreate = 114
+Rcreate = 115
+Tread = 116
+Rread = 117
+Twrite = 118
+Rwrite = 119
+Tclunk = 120
+Rclunk = 121
+Tremove = 122
+Rremove = 123
+Tstat = 124
+Rstat = 125
+Twstat = 126
+Rwstat = 127
 
-_enumCmd("version", "auth", "attach", "error", "flush", "walk", "open",
-        "create", "read", "write", "clunk", "remove", "stat", "wstat")
+for i, k in globals().items():
+        try:
+            if (i[0] in ('T', 'R')) and isinstance(k, int):
+                cmdName[k] = i
+        except:
+            pass
 
 version = '9P2000'
 versionu = '9P2000.u'
@@ -199,7 +220,7 @@ class Sock(object):
         self.reqs = {}  # reqs are per client
         self.uname = None
         self.closing = False
-        self.marshal = Marshal9P(dotu=dotu, chatty=chatty)
+        self.marshal = marshal9p.Marshal9P(dotu=dotu, chatty=chatty)
 
     def send(self, x):
         self.marshal.send(self, x)
@@ -692,7 +713,7 @@ class Server(object):
     def tversion(self, req):
         if req.ifcall.version[0:2] != '9P':
             req.ofcall.version = "unknown"
-            self.respond(r, None)
+            self.respond(req, None)
             return
 
         if req.ifcall.version == '9P2000.u':
@@ -912,18 +933,18 @@ class Server(object):
         req.fid = req.sock.getfid(req.ifcall.fid)
         if not req.fid:
             return self.respond(req, Eunknownfid)
-        if req.fid.omode == -1:
-            return self.respond(req, Eopen)
         if req.ifcall.count < 0:
             return self.respond(req, Ebotch)
         if req.ifcall.offset < 0 or ((req.fid.qid.type & QTDIR) and \
                 (req.ifcall.offset != 0) and \
                 (req.ifcall.offset != req.fid.diroffset)):
             return self.respond(req, Ebadoffset)
-
         if req.fid.qid.type & QTAUTH and self.authfs:
             self.authfs.read(self, req)
             return
+        # auth Tread goes w/o omode, there was no open()
+        if req.fid.omode == -1:
+            return self.respond(req, Eopen)
 
         if req.ifcall.count > self.msize - IOHDRSZ:
             req.ifcall.count = self.msize - IOHDRSZ
@@ -955,13 +976,14 @@ class Server(object):
         req.fid = req.sock.getfid(req.ifcall.fid)
         if not req.fid:
             return self.respond(req, Eunknownfid)
-        if req.fid.omode == -1:
-            return self.respond(req, Eopen)
         if req.ifcall.count < 0 or req.ifcall.offset < 0:
             return self.respond(req, Ebotch)
         if req.fid.qid.type & QTAUTH and self.authfs:
             self.authfs.write(self, req)
             return
+        # auth Tread goes w/o omode, there was no open()
+        if req.fid.omode == -1:
+            return self.respond(req, Eopen)
 
         if req.ifcall.count > self.msize - IOHDRSZ:
             req.ifcall.count = self.msize - IOHDRSZ
@@ -1152,7 +1174,7 @@ class Client(object):
         return self._rpc(fcall)
 
     def _wstat(self, fid, stats):
-        fcall = Fcall(Wstat)
+        fcall = Fcall(Twstat)
         fcall.fid = fid
         fcall.stats = stats
         return self._rpc(fcall)
@@ -1298,7 +1320,7 @@ class Client(object):
             buf = self.read(self.msize)
             if len(buf) == 0:
                 break
-            p9 = Marshal9P()
+            p9 = marshal9p.Marshal9P()
             p9.setBuf(buf)
             fcall = Fcall(Rstat)
             try:

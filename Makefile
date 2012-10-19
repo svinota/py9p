@@ -5,7 +5,7 @@
 # 	For license agreement, please look into LICENSE file.
 
 version ?= "1.0"
-release ?= "1.0.1"
+release ?= "1.0.2"
 python ?= "python"
 
 ifdef root
@@ -23,13 +23,14 @@ all:
 clean:
 	rm -rf dist build MANIFEST
 	find . -name "*pyc" -exec rm -f "{}" \;
+	rm -f setup.py
 
 check:
-	for i in py9p examples; \
+	for i in py9p ; \
 		do pep8 $$i || exit 1; \
-		pyflakes $$i || exit 1; \
+		pyflakes $$i || exit 2; \
 		done
-	2to3 py9p
+	-2to3 py9p
 
 setup.py:
 	gawk -v version=${version} -v release=${release} -v flavor=${flavor}\
