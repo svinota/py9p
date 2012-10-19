@@ -1,5 +1,5 @@
 Name: python-py9p
-Version: 1.0.1
+Version: 1.0.2
 Release: 1%{?dist}
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
@@ -32,5 +32,9 @@ into python-pyvfs.
 %{python_sitelib}/py9p*
 
 %changelog
+* Fri Oct 19 2012 Peter V. Saveliev <peet@redhat.com> 1.0.2-1
+- support AES-encrypted keys
+- authfs fixed
+
 * Fri Oct 12 2012 Peter V. Saveliev <peet@redhat.com> 1.0.1-1
 - Initial RH build
