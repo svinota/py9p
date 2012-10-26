@@ -3,7 +3,7 @@ import socket
 import sys
 import os
 import timeit
-import py9p
+from py9p import py9p
 
 class CmdClient(py9p.Client):
 

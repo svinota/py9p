@@ -9,7 +9,7 @@ import readline
 import atexit
 import fnmatch
 
-import py9p
+from py9p import py9p
 
 class Error(py9p.Error): pass
 

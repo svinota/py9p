@@ -4,7 +4,7 @@ import sys
 import getopt
 import os
 import copy
-import py9p
+from py9p import py9p
 
 import getopt
 import getpass
