@@ -9,7 +9,7 @@ import time
 import pwd
 import grp
 
-import py9p
+from py9p import py9p
 
 def _os(func, *args):
     try:
