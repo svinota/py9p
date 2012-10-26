@@ -279,7 +279,8 @@ class AuthFs(object):
     cancreate = 0
     pubkeys = {}
 
-    def __init__(self):
+    def __init__(self, keys=None):
+        self.keyfiles = keys or {}
         self.pubkeys = {}
 
     def addpubkeyfromfile(self, uname, pub):
@@ -322,7 +323,8 @@ class AuthFs(object):
         fid.phase = self.HaveChal
         if not hasattr(fid, 'uname'):
             raise AuthError("no fid.uname")
-        fid.key = self.getpubkey(fid.uname)
+        fid.key = self.getpubkey(fid.uname,
+                self.keyfiles.get(fid.uname, None))
         fid.chal = getchallenge()
 
     def read(self, srv, req):

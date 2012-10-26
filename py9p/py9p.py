@@ -468,7 +468,7 @@ class Server(object):
             self.authfs = None
         elif authmode == 'pki':
             import pki
-            self.authfs = pki.AuthFs()
+            self.authfs = pki.AuthFs(key)
         elif authmode == 'sk1':
             import sk1
             self.authfs = sk1.AuthFs(user, dom, key)
