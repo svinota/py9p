@@ -117,6 +117,7 @@ DMNAMEDPIPE = 0x00200000  # mode bit for named pipe (Unix, 9P2000.u)
 DMSOCKET = 0x00100000     # mode bit for socket (Unix, 9P2000.u)
 DMSETUID = 0x00080000     # mode bit for setuid (Unix, 9P2000.u)
 DMSETGID = 0x00040000     # mode bit for setgid (Unix, 9P2000.u)
+DMSTICKY = 0x00010000     # mode bit for sticky bit (Unix, 9P2000.u)
 
 DMREAD = 0x4     # mode bit for read permission
 DMWRITE = 0x2    # mode bit for write permission
