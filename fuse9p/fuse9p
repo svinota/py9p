@@ -6,6 +6,8 @@ import os
 import fuse
 import stat
 import errno
+import threading
+import traceback
 
 from py9p import marshal9p
 from py9p import py9p
@@ -27,6 +29,13 @@ def mode2stat(mode):
             ((mode & py9p.DMSETGID) >> 8) |\
             ((mode & py9p.DMSTICKY) >> 7)
 
+def mode2plan(mode):
+    return (mode & 0o777) | \
+            ((mode & stat.S_IFDIR) << 17) |\
+            ((mode & stat.S_ISUID) << 8) |\
+            ((mode & stat.S_ISGID) << 8) |\
+            ((mode & stat.S_ISVTX) << 7) |\
+            (int(mode == stat.S_IFLNK) << 25)
 
 class fStat(fuse.Stat):
     """
@@ -48,11 +57,24 @@ class fStat(fuse.Stat):
         self.st_ctime = inode.mtime
 
 
+def guard(c):
+    def wrapped(self, *argv, **kwarg):
+        ret = -errno.EIO
+        print ">> ",str(c)
+        with self._lock:
+            try:
+                ret = c(self, *argv, **kwarg)
+            except:
+                traceback.print_exc()
+        print "!! ",type(ret)
+        return ret
+    return wrapped
+
 class ClientFS(fuse.Fuse):
     def __init__(self, fd, mountpoint):
 
         self.cache = {}
-        self.client = py9p.Client(fd, chatty=True, user="peet", dotu=1)
+        self.client = py9p.Client(fd, chatty=False, user="peet", dotu=1)
 
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
                 dash_s_do='undef')
@@ -61,9 +83,65 @@ class ClientFS(fuse.Fuse):
         self.fuse_args.add('debug')
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
+        self._lock = threading.Lock()
+
     def open(self, path, flags):
         pass
 
+    def chmod(self, path, mode):
+        pass
+
+    def chown(self, path, uid, gid):
+        pass
+
+    def utime(self, path, times):
+        pass
+
+    @guard
+    def mknod(self, path, mode, dev):
+        if dev != 0:
+            return -errno.ENOSYS
+        # FIXME
+        if not mode & stat.S_IFREG:
+            mode |= stat.S_IFDIR
+        try:
+            self.client._walk(self.client.ROOT,
+                    63, filter(None, path.split("/")))
+            self.client._open(63, py9p.OTRUNC)
+            self.client._clunk(63)
+        except py9p.RpcError as e:
+            if e.message == "file not found":
+                    self.client._walk(self.client.ROOT,
+                            63, filter(None, path.split("/"))[:-1])
+                    self.client._create(63,
+                            filter(None, path.split("/"))[-1],
+                            mode2plan(mode), 0)
+                    self.client._clunk(63)
+            else:
+                return -errno.EIO
+ 
+    @guard
+    def truncate(self, path, size):
+        if size != 0:
+            return -errno.ENOSYS
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._open(63, py9p.OTRUNC)
+        self.client._clunk(63)
+
+    @guard
+    def write(self, path, buf, offset):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._open(63, py9p.OWRITE)
+        for i in range(len(buf) / 8192 + 1):
+            start = i * 8192
+            length = 8192 + min(0, (len(buf) - ((i + 1) * 8192)))
+            self.client._write(63, offset + start, buf[start:length])
+        self.client._clunk(63)
+        return len(buf)
+
+    @guard
     def read(self, path, size, offset):
         self.client._walk(self.client.ROOT,
                 63, filter(None, path.split("/")))
@@ -76,6 +154,7 @@ class ClientFS(fuse.Fuse):
         self.client._clunk(63)
         return data[:size]
 
+    @guard
     def readlink(self, path):
         self.client._walk(self.client.ROOT,
                 63, filter(None, path.split("/")))
@@ -84,6 +163,7 @@ class ClientFS(fuse.Fuse):
         self.client._clunk(63)
         return ret.data
 
+    @guard
     def getattr(self, path):
         if py9p.hash8(path) in self.cache:
             return fStat(self.cache[py9p.hash8(path)])
@@ -101,23 +181,24 @@ class ClientFS(fuse.Fuse):
         return s
 
     def readdir(self, path, offset):
-        self.client._walk(self.client.ROOT,
-                63, filter(None, path.split("/")))
-        self.client._open(63, py9p.OREAD)
-        offset = 0
-        dirs = []
-        while True:
-            ret = self.client._read(63, offset, 8192)
-            if len(ret.data) == 0:
-                break
-            offset += len(ret.data)
-            p9 = marshal9p.Marshal9P()
-            p9.setBuf(ret.data)
-            fcall = py9p.Fcall(py9p.Rstat)
-            p9.decstat(fcall, 0)
-            dirs.extend(fcall.stat)
+        with self._lock:
+            self.client._walk(self.client.ROOT,
+                    64, filter(None, path.split("/")))
+            self.client._open(64, py9p.OREAD)
+            offset = 0
+            dirs = []
+            while True:
+                ret = self.client._read(64, offset, 8192)
+                if len(ret.data) == 0:
+                    break
+                offset += len(ret.data)
+                p9 = marshal9p.Marshal9P()
+                p9.setBuf(ret.data)
+                fcall = py9p.Fcall(py9p.Rstat)
+                p9.decstat(fcall, 0)
+                dirs.extend(fcall.stat)
+            self.client._clunk(64)
 
-        self.client._clunk(63)
         for i in dirs:
             self.cache[i.qid.path] = i
             yield fuse.Direntry(i.name)
