@@ -1063,16 +1063,13 @@ class Client(object):
     F = 13
 
     path = ''  # for 'getwd' equivalent
-    chatty = 0
     msize = 8192
 
     def __init__(self, fd, authmode=None, user=None, passwd=None,
-            authsrv=None, chatty=0, key=None):
+            authsrv=None, chatty=0, key=None, dotu=0):
         self.authmode = authmode
-        fd.dotu = 0
-        fd.chatty = chatty
-        self.fd = fd
-        self.chatty = chatty
+        self.dotu = dotu
+        self.fd = Sock(fd, dotu, chatty)
         self.login(user, passwd, authsrv, key)
 
     def _rpc(self, fcall):
@@ -1112,6 +1109,7 @@ class Client(object):
         fcall.afid = afid
         fcall.uname = uname
         fcall.aname = aname
+        fcall.uidnum = 0
         return self._rpc(fcall)
 
     def _attach(self, fid, afid, uname, aname):
@@ -1120,6 +1118,7 @@ class Client(object):
         fcall.afid = afid
         fcall.uname = uname
         fcall.aname = aname
+        fcall.uidnum = 0
         return self._rpc(fcall)
 
     def _walk(self, fid, newfid, wnames):
@@ -1191,8 +1190,12 @@ class Client(object):
         self.fd.close()
 
     def login(self, user, passwd, authsrv, key=None):
-        fcall = self._version(8 * 1024, version)
-        if fcall.version != version:
+        if self.dotu:
+            ver = versionu
+        else:
+            ver = version
+        fcall = self._version(8 * 1024, ver)
+        if fcall.version != ver:
             raise ClientError("version mismatch: %r" % fcall.version)
 
         fcall.afid = self.AFID
