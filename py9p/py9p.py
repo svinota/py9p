@@ -1134,12 +1134,13 @@ class Client(object):
         fcall.mode = mode
         return self._rpc(fcall)
 
-    def _create(self, fid, name, perm, mode):
+    def _create(self, fid, name, perm, mode, extension=""):
         fcall = Fcall(Tcreate)
         fcall.fid = fid
         fcall.name = name
         fcall.perm = perm
         fcall.mode = mode
+        fcall.extension = ""
         return self._rpc(fcall)
 
     def _read(self, fid, off, count):
