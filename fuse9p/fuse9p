@@ -1,0 +1,165 @@
+#!/usr/bin/env python
+
+import socket
+import sys
+import os
+import fuse
+import stat
+import errno
+
+from py9p import marshal9p
+from py9p import py9p
+
+
+class Error(py9p.Error):
+    pass
+
+fuse.fuse_python_api = (0, 2)
+
+
+def mode2stat(mode):
+    return (mode & 0o777) |\
+            ((mode & py9p.DMDIR ^ py9p.DMDIR) >> 16) |\
+            ((mode & py9p.DMDIR) >> 17) |\
+            ((mode & py9p.DMSYMLINK) >> 10) |\
+            ((mode & py9p.DMSYMLINK) >> 12) |\
+            ((mode & py9p.DMSETUID) >> 8) |\
+            ((mode & py9p.DMSETGID) >> 8) |\
+            ((mode & py9p.DMSTICKY) >> 7)
+
+
+class fStat(fuse.Stat):
+    """
+    FUSE stat structure, that will represent PyVFS Inode
+    """
+    def __init__(self, inode):
+        self.st_mode = mode2stat(inode.mode)
+        self.st_ino = 0
+        self.st_dev = 0
+        if inode.mode & stat.S_IFDIR:
+            self.st_nlink = inode.length
+        else:
+            self.st_nlink = 1
+        self.st_uid = inode.uidnum
+        self.st_gid = inode.gidnum
+        self.st_size = inode.length
+        self.st_atime = inode.atime
+        self.st_mtime = inode.mtime
+        self.st_ctime = inode.mtime
+
+
+class ClientFS(fuse.Fuse):
+    def __init__(self, fd, mountpoint):
+
+        self.cache = {}
+        self.client = py9p.Client(fd, chatty=True, user="peet", dotu=1)
+
+        fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
+                dash_s_do='undef')
+
+        self.fuse_args.setmod('foreground')
+        self.fuse_args.add('debug')
+        self.fuse_args.mountpoint = os.path.realpath(mountpoint)
+
+    def open(self, path, flags):
+        pass
+
+    def read(self, path, size, offset):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._open(63, py9p.OREAD)
+        data = bytes()
+        for i in range(size / 8192 + 1):
+            ret = self.client._read(63, offset, 8192)
+            data += ret.data
+            offset += len(ret.data)
+        self.client._clunk(63)
+        return data[:size]
+
+    def readlink(self, path):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._open(63, py9p.OREAD)
+        ret = self.client._read(63, 0, 8192)
+        self.client._clunk(63)
+        return ret.data
+
+    def getattr(self, path):
+        if py9p.hash8(path) in self.cache:
+            return fStat(self.cache[py9p.hash8(path)])
+        try:
+            self.client._walk(self.client.ROOT,
+                    63, filter(None, path.split("/")))
+            ret = self.client._stat(63).stat[0]
+        except py9p.RpcError as e:
+            if e.message == "file not found":
+                return -errno.ENOENT
+            else:
+                return -errno.EIO
+        s = fStat(ret)
+        self.client._clunk(63)
+        return s
+
+    def readdir(self, path, offset):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._open(63, py9p.OREAD)
+        offset = 0
+        dirs = []
+        while True:
+            ret = self.client._read(63, offset, 8192)
+            if len(ret.data) == 0:
+                break
+            offset += len(ret.data)
+            p9 = marshal9p.Marshal9P()
+            p9.setBuf(ret.data)
+            fcall = py9p.Fcall(py9p.Rstat)
+            p9.decstat(fcall, 0)
+            dirs.extend(fcall.stat)
+
+        self.client._clunk(63)
+        for i in dirs:
+            self.cache[i.qid.path] = i
+            yield fuse.Direntry(i.name)
+
+
+def main():
+    args = sys.argv[1:]
+    port = py9p.PORT
+
+    srvkey = args[0].split('@', 1)
+    if len(srvkey) == 2:
+        srvkey = srvkey[1]
+    else:
+        srvkey = srvkey[0]
+
+    srvkey = srvkey.split(':', 1)
+    if len(srvkey) == 2:
+        port = int(srvkey[1])
+    srv = srvkey[0]
+
+    mountpoint = args[-1]
+
+    sock = socket.socket(socket.AF_INET)
+    try:
+        sock.connect((srv, port),)
+    except socket.error as e:
+        print "%s: %s" % (srv, e.args[1])
+        return
+
+    try:
+        fs = ClientFS(sock, mountpoint)
+        fs.main()
+    except py9p.Error as e:
+        print e
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print "interrupted."
+    except EOFError:
+        print "done."
+    except Exception, m:
+        print "unhandled exception: " + str(m.args)
+        raise
