@@ -285,9 +285,14 @@ def main():
         usage(prog)
         return 252
 
-    sock = socket.socket(socket.AF_INET)
+    if server.find("/") > -1:
+        sock = socket.socket(socket.AF_UNIX)
+        connect = server
+    else:
+        sock = socket.socket(socket.AF_INET)
+        connect = (server, port)
     try:
-        sock.connect((server, port),)
+        sock.connect(connect,)
     except socket.error as e:
         print("%s: %s" % (server, e.args[1]))
         return 251
