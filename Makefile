@@ -5,7 +5,7 @@
 # 	For license agreement, please look into LICENSE file.
 
 version ?= "1.0"
-release ?= "1.0.4"
+release ?= "1.0.5"
 python ?= "python"
 
 ifdef root
@@ -47,6 +47,9 @@ docs: clean force-version
 
 dist: clean force-version
 	${python} setup.py sdist
+
+upload: clean force-version
+	${python} setup.py sdist upload
 
 rpm: dist
 	rpmbuild -ta dist/*tar.gz
