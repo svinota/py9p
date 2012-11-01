@@ -5,7 +5,7 @@
 # 	For license agreement, please look into LICENSE file.
 
 version ?= "1.0"
-release ?= "1.0.4"
+release ?= "1.0.5"
 python ?= "python"
 
 ifdef root
@@ -25,11 +25,10 @@ clean:
 	find . -name "*pyc" -exec rm -f "{}" \;
 
 check:
-	for i in py9p ; \
+	for i in py9p fuse9p/fuse9p; \
 		do pep8 $$i || exit 1; \
 		pyflakes $$i || exit 2; \
 		done
-	-2to3 py9p
 
 setup.py:
 	gawk -v version=${version} -v release=${release} -v flavor=${flavor}\
@@ -47,6 +46,9 @@ docs: clean force-version
 
 dist: clean force-version
 	${python} setup.py sdist
+
+upload: clean force-version
+	${python} setup.py sdist upload
 
 rpm: dist
 	rpmbuild -ta dist/*tar.gz
