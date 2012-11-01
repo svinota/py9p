@@ -8,6 +8,7 @@ import stat
 import errno
 import threading
 import traceback
+import getopt
 
 from py9p import marshal9p
 from py9p import py9p
@@ -71,10 +72,15 @@ def guard(c):
     return wrapped
 
 class ClientFS(fuse.Fuse):
-    def __init__(self, fd, mountpoint):
+    def __init__(self, fd, user, authmode, keyfile, mountpoint):
 
         self.cache = {}
-        self.client = py9p.Client(fd, chatty=False, user="peet", dotu=1)
+        self.client = py9p.Client(fd,
+                chatty=False,
+                user=user,
+                authmode=authmode,
+                key=keyfile,
+                dotu=1)
 
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
                 dash_s_do='undef')
@@ -203,44 +209,113 @@ class ClientFS(fuse.Fuse):
             self.cache[i.qid.path] = i
             yield fuse.Direntry(i.name)
 
+def usage(prog):
+    print("""
+Usage: %s [-c mode] [-k file] [-l user] [-p port] \
+user@server:port mountpoint
+
+ -c mode  -- authentication mode to use (none|pki)
+ -k file  -- path to the private RSA key for PKI (implies -c pki)
+ -l user  -- username to use in authentication
+ -p port  -- TCP port to use
+    """ % (prog))
 
 def main():
+    prog = sys.argv[0]
     args = sys.argv[1:]
     port = py9p.PORT
+    user = os.environ.get('USER', None)
+    server = None
+    mountpoint = None
+    authmode = None
+    keyfile = None
 
-    srvkey = args[0].split('@', 1)
-    if len(srvkey) == 2:
-        srvkey = srvkey[1]
+    try:
+        opts, args = getopt.getopt(args, "c:k:l:p:")
+        assert len(args) == 2
+    except:
+        usage(prog)
+        return 255
+
+
+    for opt, optarg in opts:
+        if opt == "-c":
+            authmode = optarg
+        elif opt == "-k":
+            authmode = "pki"
+            keyfile = optarg
+        elif opt == "-l":
+            user = optarg
+        elif opt == "-p":
+            port = optarg
+
+
+    try:
+        target = []
+        for x in args[0].split("@"):
+            target.extend(x.split(":"))
+        assert len(target) in (1,2,3)
+    except:
+        print("invalid target host specification")
+        usage(prog)
+        return 254
+
+    if len(target) == 3:
+        user = target[0]
+        server = target[1]
     else:
-        srvkey = srvkey[0]
+        server = target[0]
 
-    srvkey = srvkey.split(':', 1)
-    if len(srvkey) == 2:
-        port = int(srvkey[1])
-    srv = srvkey[0]
+    try:
+        if len(target) >= 2:
+            port = target[-1]
+        port = int(port)
+    except:
+        print("invalid port specification")
+        usage(prog)
+        return 253
 
-    mountpoint = args[-1]
+    mountpoint = args[1]
+
+    try:
+        assert user is not None
+        assert mountpoint is not None
+        assert server is not None
+    except:
+        usage(prog)
+        return 252
 
     sock = socket.socket(socket.AF_INET)
     try:
-        sock.connect((srv, port),)
+        sock.connect((server, port),)
     except socket.error as e:
-        print "%s: %s" % (srv, e.args[1])
-        return
+        print("%s: %s" % (server, e.args[1]))
+        return 251
 
     try:
-        fs = ClientFS(sock, mountpoint)
+        fs = ClientFS(sock,
+                user,
+                authmode,
+                keyfile,
+                mountpoint)
         fs.main()
     except py9p.Error as e:
-        print e
+        print("connection error: %s" % (e))
+        return 250
+    except Exception as e:
+        print type(e)
+        print("error: %s" %(e))
+        return 249
 
 if __name__ == "__main__":
     try:
-        main()
+        ret = main()
+        if ret is not None:
+            sys.exit(ret)
     except KeyboardInterrupt:
-        print "interrupted."
+        print("interrupted")
     except EOFError:
-        print "done."
-    except Exception, m:
-        print "unhandled exception: " + str(m.args)
+        print("done")
+    except Exception as e:
+        print("unhandled exception: %s" % (e))
         raise
