@@ -2,8 +2,10 @@
 
 from distutils.core import setup
 
+man1dir="/usr/share/man/man1"
+
 setup(name='py9p',
-    version='1.0.4',
+    version='1.0.5',
     description='9P Protocol Implementation',
     author='Andrey Mirtchovski',
     author_email='aamirtch@ucalgary.ca',
@@ -13,6 +15,12 @@ setup(name='py9p',
     license="MIT",
     packages=[
         'py9p'
+        ],
+    scripts=[
+        'fuse9p/fuse9p',
+        ],
+    data_files=[
+        (man1dir, ['fuse9p/fuse9p.1',]),
         ],
     classifiers=[
         'License :: OSI Approved :: MIT License',
