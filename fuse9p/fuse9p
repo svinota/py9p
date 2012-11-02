@@ -6,6 +6,7 @@ import os
 import fuse
 import stat
 import errno
+import time
 import threading
 import traceback
 import getopt
@@ -20,6 +21,20 @@ class Error(py9p.Error):
 fuse.fuse_python_api = (0, 2)
 
 
+def open2stat(mode):
+    return (mode & 3) |\
+            ((mode & py9p.OAPPEND) >> 4) |\
+            ((mode & py9p.OEXCL) >> 5) |\
+            ((mode & py9p.OTRUNC) << 5)
+
+
+def open2plan(mode):
+    return (mode & 3) |\
+            ((mode & os.O_APPEND) << 4) |\
+            ((mode & os.O_EXCL) << 5) |\
+            ((mode & os.O_TRUNC) >> 5)
+
+
 def mode2stat(mode):
     return (mode & 0o777) |\
             ((mode & py9p.DMDIR ^ py9p.DMDIR) >> 16) |\
@@ -30,6 +45,7 @@ def mode2stat(mode):
             ((mode & py9p.DMSETGID) >> 8) |\
             ((mode & py9p.DMSTICKY) >> 7)
 
+
 def mode2plan(mode):
     return (mode & 0o777) | \
             ((mode & stat.S_IFDIR) << 17) |\
@@ -37,6 +53,7 @@ def mode2plan(mode):
             ((mode & stat.S_ISGID) << 8) |\
             ((mode & stat.S_ISVTX) << 7) |\
             (int(mode == stat.S_IFLNK) << 25)
+
 
 class fStat(fuse.Stat):
     """
@@ -61,15 +78,14 @@ class fStat(fuse.Stat):
 def guard(c):
     def wrapped(self, *argv, **kwarg):
         ret = -errno.EIO
-        print ">> ",str(c)
         with self._lock:
             try:
                 ret = c(self, *argv, **kwarg)
             except:
                 traceback.print_exc()
-        print "!! ",type(ret)
         return ret
     return wrapped
+
 
 class ClientFS(fuse.Fuse):
     def __init__(self, fd, user, authmode, keyfile, mountpoint):
@@ -91,17 +107,57 @@ class ClientFS(fuse.Fuse):
 
         self._lock = threading.Lock()
 
-    def open(self, path, flags):
-        pass
+    @guard
+    def open(self, path, mode):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._open(63, open2plan(mode))
+        self.client._clunk(63)
+
+    @guard
+    def _wstat(self, path,
+            uid=py9p.ERRUNDEF,
+            gid=py9p.ERRUNDEF,
+            mode=py9p.ERRUNDEF):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        stats = [py9p.Dir(
+            dotu=1,
+            type=0,
+            dev=0,
+            qid=py9p.Qid(0, 0, py9p.hash8(path)),
+            mode=mode,
+            atime=int(time.time()),
+            mtime=int(time.time()),
+            length=py9p.ERRUNDEF,
+            name=path.split("/")[-1],
+            uid="",
+            gid="",
+            muid="",
+            extension="",
+            uidnum=uid,
+            gidnum=gid,
+            muidnum=py9p.ERRUNDEF), ]
+        self.client._wstat(63, stats)
+        self.client._clunk(63)
 
     def chmod(self, path, mode):
-        pass
+        return self._wstat(path, mode=mode2plan(mode))
 
     def chown(self, path, uid, gid):
-        pass
+        return self._wstat(path, uid, gid)
 
     def utime(self, path, times):
         pass
+
+    @guard
+    def unlink(self, path):
+        self.client._walk(self.client.ROOT,
+                63, filter(None, path.split("/")))
+        self.client._remove(63)
+
+    def rmdir(self, path):
+        self.unlink(path)
 
     @guard
     def mknod(self, path, mode, dev):
@@ -125,7 +181,10 @@ class ClientFS(fuse.Fuse):
                     self.client._clunk(63)
             else:
                 return -errno.EIO
- 
+
+    def mkdir(self, path, mode):
+        return self.mknod(path, mode | stat.S_IFDIR, 0)
+
     @guard
     def truncate(self, path, size):
         if size != 0:
@@ -198,7 +257,7 @@ class ClientFS(fuse.Fuse):
                 if len(ret.data) == 0:
                     break
                 offset += len(ret.data)
-                p9 = marshal9p.Marshal9P()
+                p9 = marshal9p.Marshal9P(dotu=1)
                 p9.setBuf(ret.data)
                 fcall = py9p.Fcall(py9p.Rstat)
                 p9.decstat(fcall, 0)
@@ -208,6 +267,7 @@ class ClientFS(fuse.Fuse):
         for i in dirs:
             self.cache[i.qid.path] = i
             yield fuse.Direntry(i.name)
+
 
 def usage(prog):
     print("""
@@ -219,6 +279,7 @@ user@server:port mountpoint
  -l user  -- username to use in authentication
  -p port  -- TCP port to use
     """ % (prog))
+
 
 def main():
     prog = sys.argv[0]
@@ -237,7 +298,6 @@ def main():
         usage(prog)
         return 255
 
-
     for opt, optarg in opts:
         if opt == "-c":
             authmode = optarg
@@ -249,12 +309,11 @@ def main():
         elif opt == "-p":
             port = optarg
 
-
     try:
         target = []
         for x in args[0].split("@"):
             target.extend(x.split(":"))
-        assert len(target) in (1,2,3)
+        assert len(target) in (1, 2, 3)
     except:
         print("invalid target host specification")
         usage(prog)
@@ -309,7 +368,7 @@ def main():
         return 250
     except Exception as e:
         print type(e)
-        print("error: %s" %(e))
+        print("error: %s" % (e))
         return 249
 
 if __name__ == "__main__":

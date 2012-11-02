@@ -1177,7 +1177,7 @@ class Client(object):
     def _wstat(self, fid, stats):
         fcall = Fcall(Twstat)
         fcall.fid = fid
-        fcall.stats = stats
+        fcall.stat = stats
         return self._rpc(fcall)
 
     def _flush(self, tag, oldtag):
