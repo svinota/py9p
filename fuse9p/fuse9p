@@ -8,11 +8,44 @@ import stat
 import errno
 import time
 import threading
-import traceback
 import getopt
 
 from py9p import marshal9p
 from py9p import py9p
+
+
+errcodes = {
+    "usage": (255, ""),
+    "host": (254, "invalid host specification"),
+    "port": (253, "invalid port specification"),
+    "timeout": (252, "invalid timeout specification"),
+    "key": (155, "key decryption error, probably bad password \
+or wrong keyfile"),
+    "socket": (154, "socket error"),
+    "9connect": (153, "9p server connection error"),
+    "undef": (100, "error")}
+
+
+def usage():
+    print("""
+Usage: fuse9p [-c mode] [-k file] [-l user] [-p port] [-d] \
+user@server:port mountpoint
+
+ -c mode  -- authentication mode to use (none|pki)
+ -d       -- turn on debug mode and run in foreground
+ -k file  -- path to the private RSA key for PKI (implies -c pki)
+ -l user  -- username to use in authentication
+ -p port  -- TCP port to use
+    """)
+
+
+def paluu(code, payload=None):
+    print(errcodes[code][1])
+    if errcodes[code][0] > 200:
+        usage()
+    if payload is not None:
+        print(str(payload))
+    sys.exit(errcodes[code][0])
 
 
 class Error(py9p.Error):
@@ -78,24 +111,33 @@ class fStat(fuse.Stat):
 def guard(c):
     def wrapped(self, *argv, **kwarg):
         ret = -errno.EIO
+        tries = 0
         with self._lock:
-            try:
-                ret = c(self, *argv, **kwarg)
-            except:
-                traceback.print_exc()
+            while True:
+                if tries > 2:
+                    paluu("socket")
+                tries += 1
+                try:
+
+                    ret = c(self, *argv, **kwarg)
+                    break
+                except:
+                    self._reconnect()
         return ret
     return wrapped
 
 
 class ClientFS(fuse.Fuse):
-    def __init__(self, fd, credentials, mountpoint, debug=False):
+    def __init__(self, address, credentials, mountpoint,
+            debug=False, timeout=10):
 
         self.cache = {}
+        self.address = address
         self.credentials = credentials
-        self.client = py9p.Client(fd,
-                chatty=debug,
-                credentials=self.credentials,
-                dotu=1)
+        self.debug = debug
+        self.timeout = timeout
+        self.sock = None
+        self._reconnect()
 
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
                 dash_s_do='undef')
@@ -106,6 +148,27 @@ class ClientFS(fuse.Fuse):
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
         self._lock = threading.Lock()
+
+    def _reconnect(self):
+        try:
+            self.sock.close()
+        except:
+            pass
+
+        if self.address[0].find("/") > -1:
+            self.sock = socket.socket(socket.AF_UNIX)
+        else:
+            self.sock = socket.socket(socket.AF_INET)
+        self.sock.settimeout(10)
+        try:
+            self.sock.connect(self.address)
+        except Exception as e:
+            paluu("socket", e)
+        self.client = py9p.Client(
+                fd=self.sock,
+                chatty=self.debug,
+                credentials=self.credentials,
+                dotu=1)
 
     @guard
     def open(self, path, mode):
@@ -269,19 +332,6 @@ class ClientFS(fuse.Fuse):
             yield fuse.Direntry(i.name)
 
 
-def usage(prog):
-    print("""
-Usage: %s [-c mode] [-k file] [-l user] [-p port] [-d] \
-user@server:port mountpoint
-
- -c mode  -- authentication mode to use (none|pki)
- -d       -- turn on debug mode and run in foreground
- -k file  -- path to the private RSA key for PKI (implies -c pki)
- -l user  -- username to use in authentication
- -p port  -- TCP port to use
-    """ % (prog))
-
-
 if __name__ == "__main__":
     prog = sys.argv[0]
     args = sys.argv[1:]
@@ -292,13 +342,13 @@ if __name__ == "__main__":
     authmode = None
     keyfile = None
     debug = False
+    timeout = 10
 
     try:
-        opts, args = getopt.getopt(args, "dc:k:l:p:")
+        opts, args = getopt.getopt(args, "dc:k:l:p:t:")
         assert len(args) == 2
     except:
-        usage(prog)
-        sys.exit(255)
+        paluu("usage")
 
     for opt, optarg in opts:
         if opt == "-c":
@@ -312,6 +362,8 @@ if __name__ == "__main__":
             user = optarg
         elif opt == "-p":
             port = optarg
+        elif opt == "-t":
+            timeout = optarg
 
     try:
         target = []
@@ -319,9 +371,7 @@ if __name__ == "__main__":
             target.extend(x.split(":"))
         assert len(target) in (1, 2, 3)
     except:
-        print("invalid target host specification")
-        usage(prog)
-        sys.exit(254)
+        paluu("host")
 
     if len(target) == 3:
         user = target[0]
@@ -334,48 +384,35 @@ if __name__ == "__main__":
             port = target[-1]
         port = int(port)
     except:
-        print("invalid port specification")
-        usage(prog)
-        sys.exit(253)
+        paluu("port")
 
     mountpoint = args[1]
+
+    try:
+        timeout = int(timeout)
+    except:
+        paluu("timeout")
 
     try:
         assert user is not None
         assert mountpoint is not None
         assert server is not None
     except:
-        usage(prog)
-        sys.exit(252)
+        paluu("usage")
 
     try:
         credentials = py9p.Credentials(user, authmode, "", keyfile)
     except:
-        print("key decryption error, probably bad password")
-        sys.exit(101)
-
-    if server.find("/") > -1:
-        sock = socket.socket(socket.AF_UNIX)
-        connect = server
-    else:
-        sock = socket.socket(socket.AF_INET)
-        connect = (server, port)
-    try:
-        sock.connect(connect,)
-    except socket.error as e:
-        print("%s: %s" % (server, e.args[1]))
-        sys.exit(251)
+        paluu("key")
 
     try:
-        fs = ClientFS(sock,
+        fs = ClientFS((server, port),
                 credentials,
                 mountpoint,
-                debug)
+                debug,
+                timeout)
         fs.main()
     except py9p.Error as e:
-        print("connection error: %s" % (e))
-        sys.exit(250)
+        paluu("9connect", e)
     except Exception as e:
-        print type(e)
-        print("error: %s" % (e))
-        sys.exit(249)
+        paluu("undef", e)
