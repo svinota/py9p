@@ -1053,6 +1053,18 @@ class Server(object):
         return
 
 
+class Credentials(object):
+    def __init__(self, user, authmode=None, passwd=None,
+            keyfile=None, key=None):
+        self.user = user
+        self.passwd = passwd
+        self.key = key
+        self.authmode = authmode
+        if self.authmode == "pki":
+            import pki
+            self.key = pki.getprivkey(user, keyfile, passwd)
+
+
 class Client(object):
     """
     A client interface to the protocol.
@@ -1065,12 +1077,11 @@ class Client(object):
     path = ''  # for 'getwd' equivalent
     msize = 8192
 
-    def __init__(self, fd, authmode=None, user=None, passwd=None,
-            authsrv=None, chatty=0, key=None, dotu=0):
-        self.authmode = authmode
+    def __init__(self, fd, credentials, authsrv=None, chatty=0, dotu=0):
+        self.credentials = credentials
         self.dotu = dotu
         self.fd = Sock(fd, dotu, chatty)
-        self.login(user, passwd, authsrv, key)
+        self.login(authsrv, credentials)
 
     def _rpc(self, fcall):
         if fcall.type == Tversion:
@@ -1190,7 +1201,7 @@ class Client(object):
         self._clunk(self.CWD)
         self.fd.close()
 
-    def login(self, user, passwd, authsrv, key=None):
+    def login(self, authsrv, credentials):
         if self.dotu:
             ver = versionu
         else:
@@ -1201,32 +1212,33 @@ class Client(object):
 
         fcall.afid = self.AFID
         try:
-            rfcall = self._auth(fcall.afid, user, '')
+            rfcall = self._auth(fcall.afid, credentials.user, '')
         except RpcError, e:
             fcall.afid = NOFID
 
         if fcall.afid != NOFID:
             fcall.aqid = rfcall.aqid
 
-            if self.authmode == None:
+            if credentials.authmode == None:
                 raise ClientError('no authentication method')
-            elif self.authmode == 'sk1':
+            elif credentials.authmode == 'sk1':
                 import sk1
-                if passwd is None:
+                if credentials.passwd is None:
                     raise ClientError("Password required")
                 try:
-                    sk1.clientAuth(self, fcall, user, sk1.makeKey(passwd),
+                    sk1.clientAuth(self, fcall, credentials.user,
+                            sk1.makeKey(credentials.passwd),
                             authsrv, sk1.AUTHPORT)
                 except socket.error, e:
                     raise ClientError("%s: %s" % (authsrv, e.args[1]))
-            elif self.authmode == 'pki':
+            elif credentials.authmode == 'pki':
                 import pki
-                pki.clientAuth(self, fcall, user, key)
+                pki.clientAuth(self, fcall, credentials)
             else:
                 raise ClientError('unknown authentication method: %s' %
-                        self.authmode)
+                        credentials.authmode)
 
-        self._attach(self.ROOT, fcall.afid, user, "")
+        self._attach(self.ROOT, fcall.afid, credentials.user, "")
         if fcall.afid != NOFID:
             self._clunk(fcall.afid)
         self._walk(self.ROOT, self.CWD, [])
