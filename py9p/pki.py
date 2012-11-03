@@ -49,6 +49,10 @@ class BadKeyError(Error):
     pass
 
 
+class BadKeyPassword(Error):
+    pass
+
+
 def gethome(uname):
     for x in open('/etc/passwd').readlines():
         u = x.split(':')
@@ -212,7 +216,7 @@ def strtoprivkey(data, password):
     kind = data[0][11: 14]
     if data[1].startswith('Proc-Type: 4,ENCRYPTED'):  # encrypted key
         if not password:
-            raise BadKeyError("password required")
+            raise BadKeyPassword("password required")
         enc_type, salt = data[2].split(": ")[1].split(",")
         salt = unhexlify(salt.strip())
         b64Data = base64.decodestring(''.join(data[4:-1]))
@@ -257,7 +261,11 @@ def getprivkey(uname, priv=None, passphrase=None):
     else:
         privkey = file(priv).readlines()
 
-    return strtoprivkey(privkey, passphrase)
+    try:
+        return strtoprivkey(privkey, passphrase)
+    except BadKeyPassword:
+        passphrase = getpass.getpass("password: ")
+        return strtoprivkey(privkey, passphrase)
 
 
 def getchallenge():
@@ -356,7 +364,7 @@ class AuthFs(object):
         raise py9p.ServerError("unexpected phase")
 
 
-def clientAuth(cl, fcall, uname, keyfile):
+def clientAuth(cl, fcall, credentials):
     pos = [0]
 
     def rd(l):
@@ -369,14 +377,9 @@ def clientAuth(cl, fcall, uname, keyfile):
         pos[0] += fc.count
         return fc.count
 
-    try:
-        key = getprivkey(uname, keyfile)
-    except BadKeyError:
-        password = getpass.getpass("password: ")
-        key = getprivkey(uname, keyfile, password)
     c = pickle.loads(rd(2048))
-    chal = key.decrypt(c)
-    sign = key.sign(chal, '')
+    chal = credentials.key.decrypt(c)
+    sign = credentials.key.sign(chal, '')
 
     wr(pickle.dumps(sign))
     return
