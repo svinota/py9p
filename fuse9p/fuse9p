@@ -28,7 +28,7 @@ or wrong keyfile"),
 
 def usage():
     print("""
-Usage: fuse9p [-c mode] [-k file] [-l user] [-p port] [-d] \
+Usage: fuse9p [-d] [-c mode] [-k file] [-l user] [-p port] [-t secs] \
 user@server:port mountpoint
 
  -c mode  -- authentication mode to use (none|pki)
@@ -36,6 +36,7 @@ user@server:port mountpoint
  -k file  -- path to the private RSA key for PKI (implies -c pki)
  -l user  -- username to use in authentication
  -p port  -- TCP port to use
+ -t secs  -- timeout for the socket
     """)
 
 

@@ -4,7 +4,7 @@ fuse9p \- filesystem client for 9p2000.u servers
 .SH "SYNOPSIS"
 \fBmounting\fR
 .br
-	\fBfuse9p\fR [\-d] [\-c mode] [\-k file] [\-l user] [\-p port] [user@]\fBserver\fR[:port] \fBmountpoint\fR
+	\fBfuse9p\fR [\-d] [\-c mode] [\-k file] [\-l user] [\-p port] [\-t secs] [user@]\fBserver\fR[:port] \fBmountpoint\fR
 
 \fBunmounting\fR
 .br
@@ -33,6 +33,11 @@ Another difference from the kernel v9fs is a protocol optimizations that allow \
 \fB\-p\fR port
 .br
 	Server TCP port, if it differs from the default 9p.
+
+\fB\-t\fR secs
+.br
+    Timeout (in seconds) for the 9p socket. By default it is 10 seconds.
+
 .SH "LIMITATIONS"
 Current \fBfuse9p\fR implementation does not support:
 
