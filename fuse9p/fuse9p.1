@@ -4,7 +4,7 @@ fuse9p \- filesystem client for 9p2000.u servers
 .SH "SYNOPSIS"
 \fBmounting\fR
 .br
-	\fBfuse9p\fR [\-c mode] [\-k file] [\-l user] [\-p port] [user@]\fBserver\fR[:port] \fBmountpoint\fR
+	\fBfuse9p\fR [\-d] [\-c mode] [\-k file] [\-l user] [\-p port] [user@]\fBserver\fR[:port] \fBmountpoint\fR
 
 \fBunmounting\fR
 .br
@@ -17,6 +17,10 @@ Another difference from the kernel v9fs is a protocol optimizations that allow \
 \fB\-c\fR mode
 .br
 	Authentication mode. Now only \fBpki\fR mode is supported by fuse9p.
+
+\fB\-d\fR
+.br
+	Turn on debug and run in foreground. Please note, that in this mode you can not stop \fBfuse9p\fR with Ctrl\-C, you should use \fBfusermount \-u\fR.
 
 \fB\-k\fR file
 .br
@@ -47,9 +51,11 @@ PKI authentication mode uses standard SSH RSA keys. The server should have the p
 .SH "SEE ALSO"
 \fBssh\-keygen\fR(1)
 .SH "AUTHORS"
-\fBpy9p\fR library was initially written by \fBAndrey Mirtchovski\fR <\fBaamirtch@ucalgary.ca\fR>, this py9p fork is maintained by \fBPeter V. Saveliev\fR <\fBpeet@redhat.com\fR>
-.SH "LINKS"
 
+ \fB*\fR Peter V. Saveliev \fB<peet@redhat.com>\fR \-\- fuse9p author, py9p library maintainer
+ \fB*\fR Andrey Mirtchovski \fB<aamirtch@ucalgary.ca>\fR \-\- py9p library author
+
+.SH "LINKS"
  \fB*\fR All bugs post to the project page:
 .br
 	\fBhttps://github.com/svinota/py9p/issues\fR

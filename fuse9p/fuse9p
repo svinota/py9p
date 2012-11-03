@@ -88,11 +88,11 @@ def guard(c):
 
 
 class ClientFS(fuse.Fuse):
-    def __init__(self, fd, user, authmode, keyfile, mountpoint):
+    def __init__(self, fd, user, authmode, keyfile, mountpoint, debug=False):
 
         self.cache = {}
         self.client = py9p.Client(fd,
-                chatty=False,
+                chatty=debug,
                 user=user,
                 authmode=authmode,
                 key=keyfile,
@@ -101,8 +101,9 @@ class ClientFS(fuse.Fuse):
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
                 dash_s_do='undef')
 
-        self.fuse_args.setmod('foreground')
-        self.fuse_args.add('debug')
+        if debug:
+            self.fuse_args.setmod('foreground')
+            self.fuse_args.add('debug')
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
         self._lock = threading.Lock()
@@ -271,17 +272,18 @@ class ClientFS(fuse.Fuse):
 
 def usage(prog):
     print("""
-Usage: %s [-c mode] [-k file] [-l user] [-p port] \
+Usage: %s [-c mode] [-k file] [-l user] [-p port] [-d] \
 user@server:port mountpoint
 
  -c mode  -- authentication mode to use (none|pki)
+ -d       -- turn on debug mode and run in foreground
  -k file  -- path to the private RSA key for PKI (implies -c pki)
  -l user  -- username to use in authentication
  -p port  -- TCP port to use
     """ % (prog))
 
 
-def main():
+if __name__ == "__main__":
     prog = sys.argv[0]
     args = sys.argv[1:]
     port = py9p.PORT
@@ -290,17 +292,20 @@ def main():
     mountpoint = None
     authmode = None
     keyfile = None
+    debug = False
 
     try:
-        opts, args = getopt.getopt(args, "c:k:l:p:")
+        opts, args = getopt.getopt(args, "dc:k:l:p:")
         assert len(args) == 2
     except:
         usage(prog)
-        return 255
+        sys.exit(255)
 
     for opt, optarg in opts:
         if opt == "-c":
             authmode = optarg
+        elif opt == "-d":
+            debug = True
         elif opt == "-k":
             authmode = "pki"
             keyfile = optarg
@@ -317,7 +322,7 @@ def main():
     except:
         print("invalid target host specification")
         usage(prog)
-        return 254
+        sys.exit(254)
 
     if len(target) == 3:
         user = target[0]
@@ -332,7 +337,7 @@ def main():
     except:
         print("invalid port specification")
         usage(prog)
-        return 253
+        sys.exit(253)
 
     mountpoint = args[1]
 
@@ -342,7 +347,7 @@ def main():
         assert server is not None
     except:
         usage(prog)
-        return 252
+        sys.exit(252)
 
     if server.find("/") > -1:
         sock = socket.socket(socket.AF_UNIX)
@@ -354,32 +359,20 @@ def main():
         sock.connect(connect,)
     except socket.error as e:
         print("%s: %s" % (server, e.args[1]))
-        return 251
+        sys.exit(251)
 
     try:
         fs = ClientFS(sock,
                 user,
                 authmode,
                 keyfile,
-                mountpoint)
+                mountpoint,
+                debug)
         fs.main()
     except py9p.Error as e:
         print("connection error: %s" % (e))
-        return 250
+        sys.exit(250)
     except Exception as e:
         print type(e)
         print("error: %s" % (e))
-        return 249
-
-if __name__ == "__main__":
-    try:
-        ret = main()
-        if ret is not None:
-            sys.exit(ret)
-    except KeyboardInterrupt:
-        print("interrupted")
-    except EOFError:
-        print("done")
-    except Exception as e:
-        print("unhandled exception: %s" % (e))
-        raise
+        sys.exit(249)
