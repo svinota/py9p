@@ -88,14 +88,13 @@ def guard(c):
 
 
 class ClientFS(fuse.Fuse):
-    def __init__(self, fd, user, authmode, keyfile, mountpoint, debug=False):
+    def __init__(self, fd, credentials, mountpoint, debug=False):
 
         self.cache = {}
+        self.credentials = credentials
         self.client = py9p.Client(fd,
                 chatty=debug,
-                user=user,
-                authmode=authmode,
-                key=keyfile,
+                credentials=self.credentials,
                 dotu=1)
 
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
@@ -349,6 +348,12 @@ if __name__ == "__main__":
         usage(prog)
         sys.exit(252)
 
+    try:
+        credentials = py9p.Credentials(user, authmode, "", keyfile)
+    except:
+        print("key decryption error, probably bad password")
+        sys.exit(101)
+
     if server.find("/") > -1:
         sock = socket.socket(socket.AF_UNIX)
         connect = server
@@ -363,9 +368,7 @@ if __name__ == "__main__":
 
     try:
         fs = ClientFS(sock,
-                user,
-                authmode,
-                keyfile,
+                credentials,
                 mountpoint,
                 debug)
         fs.main()
