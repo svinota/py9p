@@ -1,6 +1,6 @@
 Name: python-module-py9p
 Version: 1.0.5
-Release: alt4
+Release: alt5
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Python
@@ -23,6 +23,7 @@ Summary: Plan9 filesystem client for FUSE
 License: MIT
 Group: Development/Python
 URL: https://github.com/svinota/py9p
+Requires: %name = %version-%release
 
 %description -n fuse9p
 Protocol 9P is developed for Plan9 operating system from Bell Labs.
@@ -46,6 +47,9 @@ This package contains FUSE client for the 9p protocol.
 %_man1dir/fuse9p.*
 
 %changelog
+* Sun Nov 04 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.5-alt5
+- fuse9p subpackage dependencies update
+
 * Sat Nov 03 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.5-alt4
 - FUSE client: reconnect on errors
 
