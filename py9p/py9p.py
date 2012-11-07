@@ -117,6 +117,7 @@ DMNAMEDPIPE = 0x00200000  # mode bit for named pipe (Unix, 9P2000.u)
 DMSOCKET = 0x00100000     # mode bit for socket (Unix, 9P2000.u)
 DMSETUID = 0x00080000     # mode bit for setuid (Unix, 9P2000.u)
 DMSETGID = 0x00040000     # mode bit for setgid (Unix, 9P2000.u)
+DMSTICKY = 0x00010000     # mode bit for sticky bit (Unix, 9P2000.u)
 
 DMREAD = 0x4     # mode bit for read permission
 DMWRITE = 0x2    # mode bit for write permission
@@ -467,7 +468,7 @@ class Server(object):
             self.authfs = None
         elif authmode == 'pki':
             import pki
-            self.authfs = pki.AuthFs()
+            self.authfs = pki.AuthFs(key)
         elif authmode == 'sk1':
             import sk1
             self.authfs = sk1.AuthFs(user, dom, key)
@@ -1052,6 +1053,18 @@ class Server(object):
         return
 
 
+class Credentials(object):
+    def __init__(self, user, authmode=None, passwd=None,
+            keyfile=None, key=None):
+        self.user = user
+        self.passwd = passwd
+        self.key = key
+        self.authmode = authmode
+        if self.authmode == "pki":
+            import pki
+            self.key = pki.getprivkey(user, keyfile, passwd)
+
+
 class Client(object):
     """
     A client interface to the protocol.
@@ -1062,17 +1075,13 @@ class Client(object):
     F = 13
 
     path = ''  # for 'getwd' equivalent
-    chatty = 0
     msize = 8192
 
-    def __init__(self, fd, authmode=None, user=None, passwd=None,
-            authsrv=None, chatty=0, key=None):
-        self.authmode = authmode
-        fd.dotu = 0
-        fd.chatty = chatty
-        self.fd = fd
-        self.chatty = chatty
-        self.login(user, passwd, authsrv, key)
+    def __init__(self, fd, credentials, authsrv=None, chatty=0, dotu=0):
+        self.credentials = credentials
+        self.dotu = dotu
+        self.fd = Sock(fd, dotu, chatty)
+        self.login(authsrv, credentials)
 
     def _rpc(self, fcall):
         if fcall.type == Tversion:
@@ -1111,6 +1120,7 @@ class Client(object):
         fcall.afid = afid
         fcall.uname = uname
         fcall.aname = aname
+        fcall.uidnum = 0
         return self._rpc(fcall)
 
     def _attach(self, fid, afid, uname, aname):
@@ -1119,6 +1129,7 @@ class Client(object):
         fcall.afid = afid
         fcall.uname = uname
         fcall.aname = aname
+        fcall.uidnum = 0
         return self._rpc(fcall)
 
     def _walk(self, fid, newfid, wnames):
@@ -1134,12 +1145,13 @@ class Client(object):
         fcall.mode = mode
         return self._rpc(fcall)
 
-    def _create(self, fid, name, perm, mode):
+    def _create(self, fid, name, perm, mode, extension=""):
         fcall = Fcall(Tcreate)
         fcall.fid = fid
         fcall.name = name
         fcall.perm = perm
         fcall.mode = mode
+        fcall.extension = ""
         return self._rpc(fcall)
 
     def _read(self, fid, off, count):
@@ -1176,7 +1188,7 @@ class Client(object):
     def _wstat(self, fid, stats):
         fcall = Fcall(Twstat)
         fcall.fid = fid
-        fcall.stats = stats
+        fcall.stat = stats
         return self._rpc(fcall)
 
     def _flush(self, tag, oldtag):
@@ -1189,39 +1201,44 @@ class Client(object):
         self._clunk(self.CWD)
         self.fd.close()
 
-    def login(self, user, passwd, authsrv, key=None):
-        fcall = self._version(8 * 1024, version)
-        if fcall.version != version:
+    def login(self, authsrv, credentials):
+        if self.dotu:
+            ver = versionu
+        else:
+            ver = version
+        fcall = self._version(8 * 1024, ver)
+        if fcall.version != ver:
             raise ClientError("version mismatch: %r" % fcall.version)
 
         fcall.afid = self.AFID
         try:
-            rfcall = self._auth(fcall.afid, user, '')
+            rfcall = self._auth(fcall.afid, credentials.user, '')
         except RpcError, e:
             fcall.afid = NOFID
 
         if fcall.afid != NOFID:
             fcall.aqid = rfcall.aqid
 
-            if self.authmode == None:
+            if credentials.authmode == None:
                 raise ClientError('no authentication method')
-            elif self.authmode == 'sk1':
+            elif credentials.authmode == 'sk1':
                 import sk1
-                if passwd is None:
+                if credentials.passwd is None:
                     raise ClientError("Password required")
                 try:
-                    sk1.clientAuth(self, fcall, user, sk1.makeKey(passwd),
+                    sk1.clientAuth(self, fcall, credentials.user,
+                            sk1.makeKey(credentials.passwd),
                             authsrv, sk1.AUTHPORT)
                 except socket.error, e:
                     raise ClientError("%s: %s" % (authsrv, e.args[1]))
-            elif self.authmode == 'pki':
+            elif credentials.authmode == 'pki':
                 import pki
-                pki.clientAuth(self, fcall, user, key)
+                pki.clientAuth(self, fcall, credentials)
             else:
                 raise ClientError('unknown authentication method: %s' %
-                        self.authmode)
+                        credentials.authmode)
 
-        self._attach(self.ROOT, fcall.afid, user, "")
+        self._attach(self.ROOT, fcall.afid, credentials.user, "")
         if fcall.afid != NOFID:
             self._clunk(fcall.afid)
         self._walk(self.ROOT, self.CWD, [])

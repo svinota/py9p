@@ -1,0 +1,74 @@
+.TH "fuse9p" "1" "" "Peter V. Saveliev <peet@redhat.com>" ""
+.SH "NAME"
+fuse9p \- filesystem client for 9p2000.u servers
+.SH "SYNOPSIS"
+\fBmounting\fR
+.br
+	\fBfuse9p\fR [\-d] [\-c mode] [\-k file] [\-l user] [\-p port] [\-t secs] [user@]\fBserver\fR[:port] \fBmountpoint\fR
+
+\fBunmounting\fR
+.br
+	\fBfusermount \-u mountpoint\fR
+.SH "DESCRIPTION"
+9p2000 is a file/RPC protocol developed for Plan9 operationg system. Due to its extreme simplicity it can be used to embed file servers in different applications to provide access to the internal structures and API in runtime. 9p filesystem can be mounted as well with the kernel FS implementation, but the kernel v9fs module does not support client authentication. Exporting a read/write filesystem without any authentication is a serious issue. So, if you want to export FS with authentication enabled, you have to use a client that supports it, like this \fBfuse9p\fR implementation.
+
+Another difference from the kernel v9fs is a protocol optimizations that allow \fBfuse9p\fR to work faster, avoiding unnecessary request.
+.SH "OPTIONS"
+\fB\-c\fR mode
+.br
+	Authentication mode. Now only \fBpki\fR mode is supported by fuse9p.
+
+\fB\-d\fR
+.br
+	Turn on debug and run in foreground. Please note, that in this mode you can not stop \fBfuse9p\fR with Ctrl\-C, you should use \fBfusermount \-u\fR.
+
+\fB\-k\fR file
+.br
+	Path to the private RSA key file. Implies \fB\-c pki\fR.
+
+\fB\-l\fR user
+.br
+	User name to use in FS Tattach command.
+
+\fB\-p\fR port
+.br
+	Server TCP port, if it differs from the default 9p.
+
+\fB\-t\fR secs
+.br
+    Timeout (in seconds) for the 9p socket. By default it is 10 seconds.
+
+.SH "LIMITATIONS"
+Current \fBfuse9p\fR implementation does not support:
+
+ \fB*\fR named pipes
+.br
+ \fB*\fR UNIX sockets
+.br
+ \fB*\fR hard linking
+
+
+Any other functionality can be limited; if so, report an issue to the project's bugtracker.
+.SH "AUTHENTICATION"
+\fBpki mode\fR
+
+PKI authentication mode uses standard SSH RSA keys. The server should have the public one, the client should use the corresponding private key. If the private key file location is not set up by \fB\-k\fR option, \fBfuse9p\fR tries to load it from /home/${user}/.ssh/id_rsa. If the user is not set up by \fB\-l\fR option or in the server spec, \fBfuse9p\fR uses $USER environment variable.
+.SH "SEE ALSO"
+\fBssh\-keygen\fR(1)
+.SH "AUTHORS"
+
+ \fB*\fR Peter V. Saveliev \fB<peet@redhat.com>\fR \-\- fuse9p author, py9p library maintainer
+ \fB*\fR Andrey Mirtchovski \fB<aamirtch@ucalgary.ca>\fR \-\- py9p library author
+
+.SH "LINKS"
+ \fB*\fR All bugs post to the project page:
+.br
+	\fBhttps://github.com/svinota/py9p/issues\fR
+.br
+ \fB*\fR Project's home:
+.br
+	\fBhttps://github.com/svinota/py9p/\fR
+.br
+ \fB*\fR 9p specifications:
+.br
+	\fBhttp://swtch.com/plan9port/man/man9/\fR

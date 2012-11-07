@@ -9,7 +9,7 @@ import readline
 import atexit
 import fnmatch
 
-import py9p
+from py9p import py9p
 
 class Error(py9p.Error): pass
 
@@ -344,7 +344,8 @@ def main():
     if authmode == 'sk1' and passwd is None:
         passwd = getpass.getpass()
     try:
-        cl = CmdClient(py9p.Sock(sock, 0, chatty), authmode, user, passwd, authsrv, chatty, key=privkey)
+        creds = py9p.Credentials(user, authmode, passwd, privkey)
+        cl = CmdClient(sock, creds, authsrv, chatty)
         readline.set_completer(cl.completer)
         cl.cmdLoop(cmd)
     except py9p.Error,e:
