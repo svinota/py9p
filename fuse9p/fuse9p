@@ -10,8 +10,12 @@ import time
 import threading
 import getopt
 
+from itertools import count
 from py9p import marshal9p
 from py9p import py9p
+
+
+MIN_FID = 100
 
 
 errcodes = {
@@ -128,11 +132,34 @@ def guard(c):
     return wrapped
 
 
+class FidCache(dict):
+    def __init__(self):
+        dict.__init__(self)
+        self.fid = count(MIN_FID)
+
+    def acquire(self, path):
+        if path in self:
+            self[path]["counter"] += 1
+        else:
+            self[path] = {
+                    "fid": self.fid.next(),
+                    "counter": 1}
+        return self[path]["fid"]
+
+    def release(self, path):
+        if self[path]["counter"] == 1:
+            del self[path]
+        else:
+            self[path]["counter"] -= 1
+
+    def get(self, path):
+        return self[path]["fid"]
+
+
 class ClientFS(fuse.Fuse):
     def __init__(self, address, credentials, mountpoint,
             debug=False, timeout=10):
 
-        self.cache = {}
         self.address = address
         self.credentials = credentials
         self.debug = debug
@@ -151,6 +178,10 @@ class ClientFS(fuse.Fuse):
         self._lock = threading.Lock()
 
     def _reconnect(self):
+        self.dircache = {}
+        self.fidcache = FidCache()
+        self.fid = count(MIN_FID)
+
         try:
             self.sock.close()
         except:
@@ -173,10 +204,13 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def open(self, path, mode):
-        self.client._walk(self.client.ROOT,
-                63, filter(None, path.split("/")))
-        self.client._open(63, open2plan(mode))
-        self.client._clunk(63)
+        fid = self.fidcache.acquire(path)
+        try:
+            self.client._walk(self.client.ROOT,
+                    fid, filter(None, path.split("/")))
+            self.client._open(fid, open2plan(mode))
+        except:
+            self.fidcache.release(path)
 
     @guard
     def _wstat(self, path,
@@ -260,28 +294,32 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def write(self, path, buf, offset):
-        self.client._walk(self.client.ROOT,
-                63, filter(None, path.split("/")))
-        self.client._open(63, py9p.OWRITE)
+        fid = self.fidcache.get(path)
         for i in range(len(buf) / 8192 + 1):
             start = i * 8192
             length = 8192 + min(0, (len(buf) - ((i + 1) * 8192)))
-            self.client._write(63, offset + start, buf[start:length])
-        self.client._clunk(63)
+            self.client._write(fid, offset + start, buf[start:length])
         return len(buf)
 
     @guard
     def read(self, path, size, offset):
-        self.client._walk(self.client.ROOT,
-                63, filter(None, path.split("/")))
-        self.client._open(63, py9p.OREAD)
+        fid = self.fidcache.get(path)
         data = bytes()
         for i in range(size / 8192 + 1):
-            ret = self.client._read(63, offset, 8192)
+            ret = self.client._read(fid, offset, 8192)
             data += ret.data
             offset += len(ret.data)
-        self.client._clunk(63)
         return data[:size]
+
+    @guard
+    def release(self, path, flags):
+        try:
+            fid = self.fidcache.get(path)
+            self.client._clunk(fid)
+            self.fidcache.release(path)
+        except:
+            pass
+            
 
     @guard
     def readlink(self, path):
@@ -294,8 +332,8 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def getattr(self, path):
-        if py9p.hash8(path) in self.cache:
-            return fStat(self.cache[py9p.hash8(path)])
+        if py9p.hash8(path) in self.dircache:
+            return fStat(self.dircache[py9p.hash8(path)])
         try:
             self.client._walk(self.client.ROOT,
                     63, filter(None, path.split("/")))
@@ -329,7 +367,7 @@ class ClientFS(fuse.Fuse):
             self.client._clunk(64)
 
         for i in dirs:
-            self.cache[i.qid.path] = i
+            self.dircache[i.qid.path] = i
             yield fuse.Direntry(i.name)
 
 
