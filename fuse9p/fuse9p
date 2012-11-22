@@ -56,6 +56,11 @@ def paluu(code, payload=None):
 class Error(py9p.Error):
     pass
 
+
+class FidError(Exception):
+    pass
+
+
 fuse.fuse_python_api = (0, 2)
 
 
@@ -126,6 +131,8 @@ def guard(c):
 
                     ret = c(self, *argv, **kwarg)
                     break
+                except FidError:
+                    return -errno.EIO
                 except:
                     self._reconnect()
         return ret
@@ -153,7 +160,10 @@ class FidCache(dict):
             self[path]["counter"] -= 1
 
     def get(self, path):
-        return self[path]["fid"]
+        try:
+            return self[path]["fid"]
+        except:
+            raise FidError()
 
 
 class ClientFS(fuse.Fuse):
@@ -319,7 +329,6 @@ class ClientFS(fuse.Fuse):
             self.fidcache.release(path)
         except:
             pass
-            
 
     @guard
     def readlink(self, path):
