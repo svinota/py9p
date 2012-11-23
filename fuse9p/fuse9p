@@ -19,15 +19,24 @@ MAX_FID = 65535
 
 
 errcodes = {
-    "usage": (255, ""),
-    "host": (254, "invalid host specification"),
-    "port": (253, "invalid port specification"),
-    "timeout": (252, "invalid timeout specification"),
-    "key": (155, "key decryption error, probably bad password \
+        "usage": (255, ""),
+        "host": (254, "invalid host specification"),
+        "port": (253, "invalid port specification"),
+        "timeout": (252, "invalid timeout specification"),
+        "key": (155, "key decryption error, probably bad password \
 or wrong keyfile"),
-    "socket": (154, "socket error"),
-    "9connect": (153, "9p server connection error"),
-    "undef": (100, "error")}
+        "socket": (154, "socket error"),
+        "9connect": (153, "9p server connection error"),
+        "undef": (100, "error")}
+
+rpccodes = {
+        "duplicate fid": -errno.EBADFD,
+        "unknown fid": -errno.EBADFD,
+        "create prohibited": -errno.EPERM,
+        "remove prohibited": -errno.EPERM,
+        "stat prohibited": -errno.EPERM,
+        "wstat prohibited": -errno.EPERM,
+        "permission denied": -errno.EPERM}
 
 
 def usage():
@@ -137,11 +146,12 @@ def guard(c):
                     paluu("socket")
                 tries += 1
                 try:
-
                     ret = c(self, *argv, **kwarg)
                     break
                 except NoFidError:
                     return -errno.EMFILE
+                except py9p.RpcError as e:
+                    return rpccodes.get(e.message, -errno.EIO)
                 except:
                     self._reconnect()
         return ret
