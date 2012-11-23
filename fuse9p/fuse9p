@@ -180,6 +180,8 @@ class ClientFS(fuse.Fuse):
         self.timeout = timeout
         self.sock = None
         self._reconnect()
+        self.dircache = {}
+        self.fidcache = FidCache()
 
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
                 dash_s_do='undef')
@@ -192,9 +194,6 @@ class ClientFS(fuse.Fuse):
         self._lock = threading.Lock()
 
     def _reconnect(self):
-        self.dircache = {}
-        self.fidcache = FidCache()
-
         try:
             self.sock.close()
         except:
