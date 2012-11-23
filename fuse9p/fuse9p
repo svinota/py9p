@@ -10,12 +10,12 @@ import time
 import threading
 import getopt
 
-from itertools import count
 from py9p import marshal9p
 from py9p import py9p
 
 
-MIN_FID = 100
+MIN_FID = 1024
+MAX_FID = 65535
 
 
 errcodes = {
@@ -57,7 +57,7 @@ class Error(py9p.Error):
     pass
 
 
-class FidError(Exception):
+class NoFidError(Exception):
     pass
 
 
@@ -122,7 +122,16 @@ def guard(c):
     def wrapped(self, *argv, **kwarg):
         ret = -errno.EIO
         tries = 0
-        with self._lock:
+        lock = self._lock
+        # this code part can not be used yet,
+        # 'cause py9p socket is not thread safe
+        #
+        # for i in argv:
+        #     if isinstance(i, Fid):
+        #         lock = i._lock
+        #         break
+
+        with lock:
             while True:
                 if tries > 2:
                     paluu("socket")
@@ -131,8 +140,8 @@ def guard(c):
 
                     ret = c(self, *argv, **kwarg)
                     break
-                except FidError:
-                    return -errno.EIO
+                except NoFidError:
+                    return -errno.EMFILE
                 except:
                     self._reconnect()
         return ret
@@ -140,30 +149,25 @@ def guard(c):
 
 
 class FidCache(dict):
-    def __init__(self):
+    def __init__(self, start=MIN_FID, limit=MAX_FID):
         dict.__init__(self)
-        self.fid = count(MIN_FID)
+        self.start = start
+        self.limit = limit
+        self.fids = list(range(self.start, self.limit + 1))
 
-    def acquire(self, path):
-        if path in self:
-            self[path]["counter"] += 1
-        else:
-            self[path] = {
-                    "fid": self.fid.next(),
-                    "counter": 1}
-        return self[path]["fid"]
+    def acquire(self):
+        if len(self.fids) < 1:
+            raise NoFidError()
+        return Fid(self.fids.pop(0))
 
-    def release(self, path):
-        if self[path]["counter"] == 1:
-            del self[path]
-        else:
-            self[path]["counter"] -= 1
+    def release(self, f):
+        self.fids.append(f.fid)
 
-    def get(self, path):
-        try:
-            return self[path]["fid"]
-        except:
-            raise FidError()
+
+class Fid(object):
+    def __init__(self, fid):
+        self._lock = threading.Lock()
+        self.fid = fid
 
 
 class ClientFS(fuse.Fuse):
@@ -190,7 +194,6 @@ class ClientFS(fuse.Fuse):
     def _reconnect(self):
         self.dircache = {}
         self.fidcache = FidCache()
-        self.fid = count(MIN_FID)
 
         try:
             self.sock.close()
@@ -214,13 +217,14 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def open(self, path, mode):
-        fid = self.fidcache.acquire(path)
+        f = self.fidcache.acquire()
         try:
             self.client._walk(self.client.ROOT,
-                    fid, filter(None, path.split("/")))
-            self.client._open(fid, open2plan(mode))
+                    f.fid, filter(None, path.split("/")))
+            self.client._open(f.fid, open2plan(mode))
         except:
             self.fidcache.release(path)
+        return f
 
     @guard
     def _wstat(self, path,
@@ -303,30 +307,27 @@ class ClientFS(fuse.Fuse):
         self.client._clunk(63)
 
     @guard
-    def write(self, path, buf, offset):
-        fid = self.fidcache.get(path)
+    def write(self, path, buf, offset, f):
         for i in range(len(buf) / 8192 + 1):
             start = i * 8192
             length = 8192 + min(0, (len(buf) - ((i + 1) * 8192)))
-            self.client._write(fid, offset + start, buf[start:length])
+            self.client._write(f.fid, offset + start, buf[start:length])
         return len(buf)
 
     @guard
-    def read(self, path, size, offset):
-        fid = self.fidcache.get(path)
+    def read(self, path, size, offset, f):
         data = bytes()
         for i in range(size / 8192 + 1):
-            ret = self.client._read(fid, offset, 8192)
+            ret = self.client._read(f.fid, offset, 8192)
             data += ret.data
             offset += len(ret.data)
         return data[:size]
 
     @guard
-    def release(self, path, flags):
+    def release(self, path, flags, f):
         try:
-            fid = self.fidcache.get(path)
-            self.client._clunk(fid)
-            self.fidcache.release(path)
+            self.client._clunk(f.fid)
+            self.fidcache.release(f)
         except:
             pass
 
