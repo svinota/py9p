@@ -1,6 +1,6 @@
 Name: python-py9p
 Version: 1.0.5
-Release: 1%{?dist}
+Release: 2%{?dist}
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Languages
@@ -49,10 +49,14 @@ beta development state.
 
 %files -n fuse9p
 %_bindir/fuse9p
-%_man1dir/fuse9p.*
+%_mandir/man1/fuse9p.*
 
 
 %changelog
+* Thu Nov 29 2012 Peter V. Saveliev <peet@redhat.com> 1.0.5-2
+- fuse9p stateful I/O
+- 9p marshalling is thread-safe now
+
 * Wed Nov 07 2012 Peter V. Saveliev <peet@redhat.com> 1.0.5-1
 - fuse9p subpackage added (beta)
 - pki authentication fixed
