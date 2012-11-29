@@ -273,6 +273,14 @@ class ClientFS(fuse.Fuse):
         self.unlink(path)
 
     @guard
+    def symlink(self, tfid, target, path):
+        self.client._walk(self.client.ROOT, tfid,
+                filter(None, path.split("/"))[:-1])
+        self.client._create(tfid, filter(None, path.split("/"))[-1],
+                py9p.DMSYMLINK, 0, target)
+        self.client._clunk(tfid)
+
+    @guard
     def mknod(self, tfid, path, mode, dev):
         if dev != 0:
             return -errno.ENOSYS
