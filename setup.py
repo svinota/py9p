@@ -5,7 +5,7 @@ from distutils.core import setup
 man1dir="/usr/share/man/man1"
 
 setup(name='py9p',
-    version='1.0.5',
+    version='1.0.6',
     description='9P Protocol Implementation',
     author='Andrey Mirtchovski',
     author_email='aamirtch@ucalgary.ca',
@@ -49,6 +49,13 @@ Links
 
 Changes
 =======
+
+1.0.6 -- Paleoarchean
+---------------------
+
+ * Tcreate client call fixed
+ * fuse9p client, supporting stateful I/O,
+   "reconnect after network errors" and so on.
 
 1.0.4 -- Eoarchaean
 -------------------

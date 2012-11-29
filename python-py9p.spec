@@ -1,6 +1,6 @@
 Name: python-module-py9p
-Version: 1.0.5
-Release: alt5
+Version: 1.0.6
+Release: alt1
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Python
@@ -47,6 +47,13 @@ This package contains FUSE client for the 9p protocol.
 %_man1dir/fuse9p.*
 
 %changelog
+* Thu Nov 29 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.6-alt1
+- fuse9p: stateful I/O
+- fuse9p: symlink support
+- fuse9p: do not use static fids
+- py9p: Tcreate call fixed
+- py9p: thread-safe I/O
+
 * Sun Nov 04 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.5-alt5
 - fuse9p subpackage dependencies update
 
