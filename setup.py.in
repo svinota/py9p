@@ -50,6 +50,13 @@ Links
 Changes
 =======
 
+1.0.6 -- Paleoarchean
+---------------------
+
+ * Tcreate client call fixed
+ * fuse9p client, supporting stateful I/O,
+   "reconnect after network errors" and so on.
+
 1.0.4 -- Eoarchaean
 -------------------
 
