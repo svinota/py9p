@@ -1,4 +1,5 @@
 import py9p
+import threading
 
 
 class Marshal(object):
@@ -127,6 +128,7 @@ class Marshal9P(Marshal):
     def __init__(self, dotu=0, chatty=False):
         self.chatty = chatty
         self.dotu = dotu
+        self._lock = threading.Lock()
 
     def encQ(self, q):
         self.enc1(q.type)
@@ -146,33 +148,36 @@ class Marshal9P(Marshal):
 
     def send(self, fd, fcall):
         "Format and send a message"
-        self.setBuf()
-        self._checkType(fcall.type)
-        if self.chatty:
-            print "-%d->" % fd.fileno(), py9p.cmdName[fcall.type], \
-                fcall.tag, fcall.tostr()
-        self.enc1(fcall.type)
-        self.enc2(fcall.tag)
-        self.enc(fcall)
-        self.enc4(len(self.bytes) + 4)
-        self.bytes = self.bytes[-4:] + self.bytes[:-4]
-        fd.write(self.getBuf())
+        with self._lock:
+            self.setBuf()
+            self._checkType(fcall.type)
+            if self.chatty:
+                print "-%d->" % fd.fileno(), py9p.cmdName[fcall.type], \
+                    fcall.tag, fcall.tostr()
+            self.enc1(fcall.type)
+            self.enc2(fcall.tag)
+            self.enc(fcall)
+            self.enc4(len(self.bytes) + 4)
+            self.bytes = self.bytes[-4:] + self.bytes[:-4]
+            fd.write(self.getBuf())
 
     def recv(self, fd):
         "Read and decode a message"
-        self.setBuf(fd.read(4))
-        size = self.dec4()
-        if size > self.MAXSIZE or size < 4:
-            raise py9p.Error("Bad message size: %d" % size)
-        self.setBuf(fd.read(size - 4))
-        type, tag = self.dec1(), self.dec2()
-        self._checkType(type)
-        fcall = py9p.Fcall(type, tag)
-        self.dec(fcall)
-        self._checkResid()
-        if self.chatty:
-            print "<-%d-" % fd.fileno(), py9p.cmdName[type], tag, fcall.tostr()
-        return fcall
+        with self._lock:
+            self.setBuf(fd.read(4))
+            size = self.dec4()
+            if size > self.MAXSIZE or size < 4:
+                raise py9p.Error("Bad message size: %d" % size)
+            self.setBuf(fd.read(size - 4))
+            type, tag = self.dec1(), self.dec2()
+            self._checkType(type)
+            fcall = py9p.Fcall(type, tag)
+            self.dec(fcall)
+            self._checkResid()
+            if self.chatty:
+                print "<-%d- %s %s %s" % (fd.fileno(), py9p.cmdName[type],
+                        tag, fcall.tostr())
+            return fcall
 
     def encstat(self, fcall, enclen=1):
         statsz = 0
