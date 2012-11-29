@@ -1151,7 +1151,7 @@ class Client(object):
         fcall.name = name
         fcall.perm = perm
         fcall.mode = mode
-        fcall.extension = ""
+        fcall.extension = extension
         return self._rpc(fcall)
 
     def _read(self, fid, off, count):
