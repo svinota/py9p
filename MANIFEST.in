@@ -1,3 +1,4 @@
 include python-py9p.spec
 include README*
 include LICENSE
+include fuse9p/fuse9p.1
