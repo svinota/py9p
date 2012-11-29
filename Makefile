@@ -5,7 +5,7 @@
 # 	For license agreement, please look into LICENSE file.
 
 version ?= "1.0"
-release ?= "1.0.5"
+release ?= "1.0.6"
 python ?= "python"
 
 ifdef root
