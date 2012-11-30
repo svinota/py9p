@@ -3,7 +3,7 @@
 """
 
 import os
-import os.path
+import stat
 import sys
 import socket
 import select
@@ -165,6 +165,40 @@ def modetostr(mode):
     elif mode & DMAPPEND:
         d = "a"
     return "%s%s%s%s" % (d, b(6), b(3), b(0))
+
+
+def open2stat(mode):
+    return (mode & 3) |\
+            ((mode & OAPPEND) >> 4) |\
+            ((mode & OEXCL) >> 5) |\
+            ((mode & OTRUNC) << 5)
+
+
+def open2plan(mode):
+    return (mode & 3) |\
+            ((mode & os.O_APPEND) << 4) |\
+            ((mode & os.O_EXCL) << 5) |\
+            ((mode & os.O_TRUNC) >> 5)
+
+
+def mode2stat(mode):
+    return (mode & 0o777) |\
+            ((mode & DMDIR ^ DMDIR) >> 16) |\
+            ((mode & DMDIR) >> 17) |\
+            ((mode & DMSYMLINK) >> 10) |\
+            ((mode & DMSYMLINK) >> 12) |\
+            ((mode & DMSETUID) >> 8) |\
+            ((mode & DMSETGID) >> 8) |\
+            ((mode & DMSTICKY) >> 7)
+
+
+def mode2plan(mode):
+    return (mode & 0o777) | \
+            ((mode & stat.S_IFDIR) << 17) |\
+            ((mode & stat.S_ISUID) << 8) |\
+            ((mode & stat.S_ISGID) << 8) |\
+            ((mode & stat.S_ISVTX) << 7) |\
+            (int(mode == stat.S_IFLNK) << 25)
 
 
 def hash8(obj):

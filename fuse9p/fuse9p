@@ -74,46 +74,12 @@ class NoFidError(Exception):
 fuse.fuse_python_api = (0, 2)
 
 
-def open2stat(mode):
-    return (mode & 3) |\
-            ((mode & py9p.OAPPEND) >> 4) |\
-            ((mode & py9p.OEXCL) >> 5) |\
-            ((mode & py9p.OTRUNC) << 5)
-
-
-def open2plan(mode):
-    return (mode & 3) |\
-            ((mode & os.O_APPEND) << 4) |\
-            ((mode & os.O_EXCL) << 5) |\
-            ((mode & os.O_TRUNC) >> 5)
-
-
-def mode2stat(mode):
-    return (mode & 0o777) |\
-            ((mode & py9p.DMDIR ^ py9p.DMDIR) >> 16) |\
-            ((mode & py9p.DMDIR) >> 17) |\
-            ((mode & py9p.DMSYMLINK) >> 10) |\
-            ((mode & py9p.DMSYMLINK) >> 12) |\
-            ((mode & py9p.DMSETUID) >> 8) |\
-            ((mode & py9p.DMSETGID) >> 8) |\
-            ((mode & py9p.DMSTICKY) >> 7)
-
-
-def mode2plan(mode):
-    return (mode & 0o777) | \
-            ((mode & stat.S_IFDIR) << 17) |\
-            ((mode & stat.S_ISUID) << 8) |\
-            ((mode & stat.S_ISGID) << 8) |\
-            ((mode & stat.S_ISVTX) << 7) |\
-            (int(mode == stat.S_IFLNK) << 25)
-
-
 class fStat(fuse.Stat):
     """
     FUSE stat structure, that will represent PyVFS Inode
     """
     def __init__(self, inode):
-        self.st_mode = mode2stat(inode.mode)
+        self.st_mode = py9p.mode2stat(inode.mode)
         self.st_ino = 0
         self.st_dev = 0
         if inode.mode & stat.S_IFDIR:
@@ -276,7 +242,7 @@ class ClientFS(fuse.Fuse):
         try:
             self.client._walk(self.client.ROOT,
                     f.fid, filter(None, path.split("/")))
-            self.client._open(f.fid, open2plan(mode))
+            self.client._open(f.fid, py9p.open2plan(mode))
             return f
         except:
             self.fidcache.release(f)
@@ -310,7 +276,7 @@ class ClientFS(fuse.Fuse):
         self.client._clunk(tfid)
 
     def chmod(self, path, mode):
-        return self._wstat(path, mode=mode2plan(mode))
+        return self._wstat(path, mode=py9p.mode2plan(mode))
 
     def chown(self, path, uid, gid):
         return self._wstat(path, uid, gid)
@@ -354,7 +320,7 @@ class ClientFS(fuse.Fuse):
                             tfid, filter(None, path.split("/"))[:-1])
                     self.client._create(tfid,
                             filter(None, path.split("/"))[-1],
-                            mode2plan(mode), 0)
+                            py9p.mode2plan(mode), 0)
                     self.client._clunk(tfid)
             else:
                 return -errno.EIO
