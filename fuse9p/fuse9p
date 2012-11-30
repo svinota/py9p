@@ -8,6 +8,7 @@ import stat
 import errno
 import time
 import getopt
+import threading
 
 from py9p import marshal9p
 from py9p import py9p
@@ -16,7 +17,7 @@ MIN_TFID = 64
 MAX_TFID = 1023
 MIN_FID = 1024
 MAX_FID = 65535
-
+MAX_RECONNECT_INTERVAL = 1024
 
 errcodes = {
         "usage": (255, ""),
@@ -127,25 +128,31 @@ class fStat(fuse.Stat):
         self.st_ctime = inode.mtime
 
 
+class fakeRoot(fuse.Stat):
+    def __init__(self):
+        self.st_mode = stat.S_IFDIR | 0o755
+        self.st_ino = 0
+        self.st_dev = 0
+        self.st_nlink = 3
+        self.st_uid = 0
+        self.st_gid = 0
+        self.st_size = 3
+        self.st_atime = self.st_mtime = self.st_ctime = time.time()
+
+
 def guard(c):
     def wrapped(self, *argv, **kwarg):
         ret = -errno.EIO
-        tries = 0
         tfid = None
-        while True:
-            if tries > 2:
-                paluu("socket")
-            tries += 1
-            try:
-                tfid = self.tfidcache.acquire()
-                ret = c(self, tfid.fid, *argv, **kwarg)
-                break
-            except NoFidError:
-                return -errno.EMFILE
-            except py9p.RpcError as e:
-                return rpccodes.get(e.message, -errno.EIO)
-            except:
-                self._reconnect()
+        try:
+            tfid = self.tfidcache.acquire()
+            ret = c(self, tfid.fid, *argv, **kwarg)
+        except NoFidError:
+            return -errno.EMFILE
+        except py9p.RpcError as e:
+            return rpccodes.get(e.message, -errno.EIO)
+        except:
+            self._reconnect()
         if tfid is not None:
             self.tfidcache.release(tfid)
         return ret
@@ -175,14 +182,20 @@ class Fid(object):
 
 class ClientFS(fuse.Fuse):
     def __init__(self, address, credentials, mountpoint,
-            debug=False, timeout=10):
+            debug=False, timeout=10, keep_reconnect=False):
 
         self.address = address
         self.credentials = credentials
         self.debug = debug
         self.timeout = timeout
         self.sock = None
-        self._reconnect()
+        self.exit = None
+        self.keep_reconnect = keep_reconnect
+        self.lock = threading.Lock()
+        self._interval = 1
+        self._reconnect_event = threading.Event()
+        self._connected_event = threading.Event()
+        self._reconnect(init=True)
         self.dircache = {}
         self.fidcache = FidCache()
         self.tfidcache = FidCache(start=MIN_TFID, limit=MAX_TFID)
@@ -195,7 +208,21 @@ class ClientFS(fuse.Fuse):
             self.fuse_args.add('debug')
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
-    def _reconnect(self):
+    def _reconnect(self, init=False):
+        if self.lock.acquire(False):
+            self._connected_event.clear()
+            t = threading.Thread(target=self._reconnect_target, args=(init,))
+            t.setDaemon(True)
+            t.start()
+            self._connected_event.wait(15)
+            if self.exit:
+                paluu("socket", self.exit)
+
+    def _reconnect_interval(self):
+        self._interval = min(self._interval * 2, MAX_RECONNECT_INTERVAL)
+        return self._interval
+
+    def _reconnect_target(self, init=False):
         try:
             self.sock.close()
         except:
@@ -206,15 +233,38 @@ class ClientFS(fuse.Fuse):
         else:
             self.sock = socket.socket(socket.AF_INET)
         self.sock.settimeout(10)
-        try:
-            self.sock.connect(self.address)
-        except Exception as e:
-            paluu("socket", e)
-        self.client = py9p.Client(
-                fd=self.sock,
-                chatty=self.debug,
-                credentials=self.credentials,
-                dotu=1)
+        while True:
+            try:
+                if self.debug:
+                    print("trying to connect")
+                self.sock.connect(self.address)
+                self.client = py9p.Client(
+                        fd=self.sock,
+                        chatty=self.debug,
+                        credentials=self.credentials,
+                        dotu=1)
+                self._connected_event.set()
+                self.lock.release()
+                return
+            except Exception as e:
+                if self.keep_reconnect:
+                    if init:
+                        # if we get an error on the very initial
+                        # time, just fake the connection --
+                        # next reconnect round will be triggered
+                        # by the next failed FS call
+                        self.lock.release()
+                        self._connected_event.set()
+                        return
+                    s = self._reconnect_interval()
+                    if self.debug:
+                        print("reconnect in %s seconds" % (s))
+                    self._reconnect_event.wait(s)
+                    self._reconnect_event.clear()
+                else:
+                    self.exit = e
+                    self._connected_event.set()
+                    return
 
     @guard
     def open(self, tfid, path, mode):
@@ -350,7 +400,7 @@ class ClientFS(fuse.Fuse):
         return ret.data
 
     @guard
-    def getattr(self, tfid, path):
+    def _getattr(self, tfid, path):
         if py9p.hash8(path) in self.dircache:
             return fStat(self.dircache[py9p.hash8(path)])
         try:
@@ -366,13 +416,27 @@ class ClientFS(fuse.Fuse):
         self.client._clunk(tfid)
         return s
 
+    def getattr(self, path):
+        self._interval = 1
+        self._reconnect_event.set()
+
+        s = self._getattr(path)
+
+        if s == -errno.EIO:
+            if self.keep_reconnect:
+                if path == "/":
+                    return fakeRoot()
+                else:
+                    return -errno.ENOENT
+        return s
+
     @guard
-    def readdir(self, tfid, path, offset):
+    def _readdir(self, tfid, path, offset):
+        dirs = []
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         self.client._open(tfid, py9p.OREAD)
         offset = 0
-        dirs = []
         while True:
             ret = self.client._read(tfid, offset, 8192)
             if len(ret.data) == 0:
@@ -384,6 +448,15 @@ class ClientFS(fuse.Fuse):
             p9.decstat(fcall, 0)
             dirs.extend(fcall.stat)
         self.client._clunk(tfid)
+        return dirs
+
+    def readdir(self, path, offset):
+        self._interval = 1
+        self._reconnect_event.set()
+
+        dirs = self._readdir(path, offset)
+        if dirs == -errno.EIO:
+            dirs = []
 
         for i in dirs:
             self.dircache[i.qid.path] = i
@@ -401,9 +474,10 @@ if __name__ == "__main__":
     keyfile = None
     debug = False
     timeout = 10
+    keep_reconnect = False
 
     try:
-        opts, args = getopt.getopt(args, "dc:k:l:p:t:")
+        opts, args = getopt.getopt(args, "Pdc:k:l:p:t:")
         assert len(args) == 2
     except:
         paluu("usage")
@@ -422,6 +496,8 @@ if __name__ == "__main__":
             port = optarg
         elif opt == "-t":
             timeout = optarg
+        elif opt == "-P":
+            keep_reconnect = True
 
     try:
         target = []
@@ -468,7 +544,8 @@ if __name__ == "__main__":
                 credentials,
                 mountpoint,
                 debug,
-                timeout)
+                timeout,
+                keep_reconnect)
         fs.main()
     except py9p.Error as e:
         paluu("9connect", e)
