@@ -59,6 +59,9 @@ class fStat(fuse.Stat):
 
 
 class fakeRoot(fuse.Stat):
+    """
+    Fake empty root for disconnected state
+    """
     def __init__(self):
         self.st_mode = stat.S_IFDIR | 0o755
         self.st_ino = 0
@@ -71,6 +74,13 @@ class fakeRoot(fuse.Stat):
 
 
 def guard(c):
+    """
+    The decorator function, specific for ClientFS class
+
+        * acqiures and releases temporary fid
+        * deals with py9p RPC errors
+        * triggers reconnect() on network errors
+    """
     def wrapped(self, *argv, **kwarg):
         ret = -errno.EIO
         tfid = None
@@ -78,9 +88,9 @@ def guard(c):
             tfid = self.tfidcache.acquire()
             ret = c(self, tfid.fid, *argv, **kwarg)
         except NoFidError:
-            return -errno.EMFILE
+            ret = -errno.EMFILE
         except py9p.RpcError as e:
-            return rpccodes.get(e.message, -errno.EIO)
+            ret = rpccodes.get(e.message, -errno.EIO)
         except:
             self._reconnect()
         if tfid is not None:
@@ -90,29 +100,72 @@ def guard(c):
 
 
 class FidCache(dict):
+    """
+    Fid cache class
+
+    The class provides API to acquire next not used Fid
+    for the 9p operations. If there is no free Fid available,
+    it raises NoFidError(). After usage, Fid should be freed
+    and returned to the cache with release() method.
+    """
     def __init__(self, start=MIN_FID, limit=MAX_FID):
+        """
+         * start -- the Fid interval beginning
+         * limit -- the Fid interval end
+
+        All acquired Fids will be from this interval.
+        """
         dict.__init__(self)
         self.start = start
         self.limit = limit
         self.fids = list(range(self.start, self.limit + 1))
 
     def acquire(self):
+        """
+        Acquire next available Fid
+        """
         if len(self.fids) < 1:
             raise NoFidError()
         return Fid(self.fids.pop(0))
 
     def release(self, f):
+        """
+        Return Fid to the free Fids queue.
+        """
         self.fids.append(f.fid)
 
 
 class Fid(object):
+    """
+    Fid class
+
+    It is used also in the stateful I/O, representing
+    the open file. All methods, working with open files,
+    will receive Fid as the last parameter.
+
+    See: write(), read(), release()
+    """
     def __init__(self, fid):
         self.fid = fid
 
 
 class ClientFS(fuse.Fuse):
+    """
+    FUSE subclass
+
+    Implements all the proxying of FUSE calls to 9p
+    server. Can authomatically reconnect to the server.
+    """
     def __init__(self, address, credentials, mountpoint,
             debug=False, timeout=10, keep_reconnect=False):
+        """
+         * address -- (address,port) of the 9p server, tuple
+         * credentials -- py9p.Credentials
+         * mountpoint -- where to mount the FS
+         * debug -- FUSE and py9p debug output, implies foreground run
+         * timeout -- socket timeout
+         * keep_reconnect -- whether to try reconnect after errors
+        """
 
         self.address = address
         self.credentials = credentials
@@ -142,21 +195,31 @@ class ClientFS(fuse.Fuse):
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
     def _reconnect(self, init=False):
+        """
+        Start reconnection thread. When init=True, just probe
+        the connection and return even if keep_reconnect=True.
+        """
         if self._lock.acquire(False):
             self._connected_event.clear()
             t = threading.Thread(target=self._reconnect_target, args=(init,))
             t.setDaemon(True)
             t.start()
-            self._connected_event.wait(15)
+            self._connected_event.wait(self.timeout + 2)
             if self.exit:
                 print(str(self.exit))
                 sys.exit(255)
 
     def _reconnect_interval(self):
+        """
+        Return next reconnection interval in seconds.
+        """
         self._interval = min(self._interval * 2, MAX_RECONNECT_INTERVAL)
         return self._interval
 
     def _reconnect_target(self, init=False):
+        """
+        Reconnection thread code.
+        """
         try:
             self.sock.close()
         except:
@@ -166,7 +229,7 @@ class ClientFS(fuse.Fuse):
             self.sock = socket.socket(socket.AF_UNIX)
         else:
             self.sock = socket.socket(socket.AF_INET)
-        self.sock.settimeout(10)
+        self.sock.settimeout(self.timeout)
         while True:
             try:
                 if self.debug:
