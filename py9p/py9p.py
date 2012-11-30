@@ -456,14 +456,15 @@ class Server(object):
     A server interface to the protocol.
     Subclass this to provide service
     """
-    msize = 8192
     chatty = False
     readpool = []
     writepool = []
     activesocks = {}
 
     def __init__(self, listen, authmode=None, fs=None, user=None,
-            dom=None, key=None, chatty=False, dotu=False):
+            dom=None, key=None, chatty=False, dotu=False, msize=8192):
+        self.msize = msize
+
         if authmode == None:
             self.authfs = None
         elif authmode == 'pki':
@@ -737,11 +738,12 @@ class Server(object):
             req.ofcall.version = '9P2000'
             req.sock.marshal.dotu = 0
 
-        req.ofcall.msize = req.ifcall.msize
+        req.ofcall.msize = min(req.ifcall.msize, self.msize)
         self.respond(req, None)
 
     def rversion(self, req, error):
-        self.msize = req.ofcall.msize
+        # self.msize = req.ofcall.msize
+        pass
 
     def tauth(self, req):
         if self.authfs == None:
@@ -1075,11 +1077,12 @@ class Client(object):
     F = 13
 
     path = ''  # for 'getwd' equivalent
-    msize = 8192
 
-    def __init__(self, fd, credentials, authsrv=None, chatty=0, dotu=0):
+    def __init__(self, fd, credentials, authsrv=None, chatty=0, dotu=0,
+            msize=8192):
         self.credentials = credentials
         self.dotu = dotu
+        self.msize = msize
         self.fd = Sock(fd, dotu, chatty)
         self.login(authsrv, credentials)
 
@@ -1206,7 +1209,8 @@ class Client(object):
             ver = versionu
         else:
             ver = version
-        fcall = self._version(8 * 1024, ver)
+        fcall = self._version(self.msize, ver)
+        self.msize = fcall.msize
         if fcall.version != ver:
             raise ClientError("version mismatch: %r" % fcall.version)
 

@@ -188,10 +188,11 @@ class ClientFS(fuse.Fuse):
         self.credentials = credentials
         self.debug = debug
         self.timeout = timeout
+        self.msize = 1024 * 16
         self.sock = None
         self.exit = None
         self.keep_reconnect = keep_reconnect
-        self.lock = threading.Lock()
+        self._lock = threading.Lock()
         self._interval = 1
         self._reconnect_event = threading.Event()
         self._connected_event = threading.Event()
@@ -206,10 +207,12 @@ class ClientFS(fuse.Fuse):
         if debug:
             self.fuse_args.setmod('foreground')
             self.fuse_args.add('debug')
+        self.fuse_args.add('large_read')
+        self.fuse_args.add('big_writes')
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
     def _reconnect(self, init=False):
-        if self.lock.acquire(False):
+        if self._lock.acquire(False):
             self._connected_event.clear()
             t = threading.Thread(target=self._reconnect_target, args=(init,))
             t.setDaemon(True)
@@ -242,9 +245,10 @@ class ClientFS(fuse.Fuse):
                         fd=self.sock,
                         chatty=self.debug,
                         credentials=self.credentials,
-                        dotu=1)
+                        dotu=1, msize=self.msize)
+                self.msize = self.client.msize
                 self._connected_event.set()
-                self.lock.release()
+                self._lock.release()
                 return
             except Exception as e:
                 if self.keep_reconnect:
@@ -253,7 +257,7 @@ class ClientFS(fuse.Fuse):
                         # time, just fake the connection --
                         # next reconnect round will be triggered
                         # by the next failed FS call
-                        self.lock.release()
+                        self._lock.release()
                         self._connected_event.set()
                         return
                     s = self._reconnect_interval()
@@ -273,9 +277,10 @@ class ClientFS(fuse.Fuse):
             self.client._walk(self.client.ROOT,
                     f.fid, filter(None, path.split("/")))
             self.client._open(f.fid, open2plan(mode))
+            return f
         except:
-            self.fidcache.release(path)
-        return f
+            self.fidcache.release(f)
+            return -errno.EIO
 
     @guard
     def _wstat(self, tfid, path,
@@ -318,6 +323,7 @@ class ClientFS(fuse.Fuse):
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         self.client._remove(tfid)
+        self.dircache = {}
 
     def rmdir(self, path):
         self.unlink(path)
@@ -367,17 +373,18 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def write(self, tfid, path, buf, offset, f):
-        for i in range(len(buf) / 8192 + 1):
-            start = i * 8192
-            length = 8192 + min(0, (len(buf) - ((i + 1) * 8192)))
+        l = len(buf)
+        for i in range(l / self.msize + 1):
+            start = i * self.msize
+            length = self.msize + min(0, (l - ((i + 1) * self.msize)))
             self.client._write(f.fid, offset + start, buf[start:length])
-        return len(buf)
+        return l
 
     @guard
     def read(self, tfid, path, size, offset, f):
         data = bytes()
-        for i in range(size / 8192 + 1):
-            ret = self.client._read(f.fid, offset, 8192)
+        for i in range(size / self.msize + 1):
+            ret = self.client._read(f.fid, offset, self.msize)
             data += ret.data
             offset += len(ret.data)
         return data[:size]
@@ -395,7 +402,7 @@ class ClientFS(fuse.Fuse):
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         self.client._open(tfid, py9p.OREAD)
-        ret = self.client._read(tfid, 0, 8192)
+        ret = self.client._read(tfid, 0, self.msize)
         self.client._clunk(tfid)
         return ret.data
 
@@ -438,7 +445,7 @@ class ClientFS(fuse.Fuse):
         self.client._open(tfid, py9p.OREAD)
         offset = 0
         while True:
-            ret = self.client._read(tfid, offset, 8192)
+            ret = self.client._read(tfid, offset, self.msize)
             if len(ret.data) == 0:
                 break
             offset += len(ret.data)
