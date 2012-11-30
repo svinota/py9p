@@ -20,7 +20,7 @@ endif
 all:
 	@echo targets: dist, install
 
-clean:
+clean: clean-version
 	rm -rf dist build MANIFEST
 	find . -name "*pyc" -exec rm -f "{}" \;
 
@@ -30,14 +30,15 @@ check:
 		pyflakes $$i || exit 2; \
 		done
 
-setup.py:
+setup.py py9p/__init__.py:
 	gawk -v version=${version} -v release=${release} -v flavor=${flavor}\
 		-f configure.gawk $@.in >$@
 
 clean-version:
 	rm -f setup.py
+	rm -f py9p/__init__.py
 
-update-version: setup.py
+update-version: setup.py py9p/__init__.py
 
 force-version: clean-version update-version
 

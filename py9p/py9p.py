@@ -3,7 +3,7 @@
 """
 
 import os
-import os.path
+import stat
 import sys
 import socket
 import select
@@ -165,6 +165,40 @@ def modetostr(mode):
     elif mode & DMAPPEND:
         d = "a"
     return "%s%s%s%s" % (d, b(6), b(3), b(0))
+
+
+def open2stat(mode):
+    return (mode & 3) |\
+            ((mode & OAPPEND) >> 4) |\
+            ((mode & OEXCL) >> 5) |\
+            ((mode & OTRUNC) << 5)
+
+
+def open2plan(mode):
+    return (mode & 3) |\
+            ((mode & os.O_APPEND) << 4) |\
+            ((mode & os.O_EXCL) << 5) |\
+            ((mode & os.O_TRUNC) >> 5)
+
+
+def mode2stat(mode):
+    return (mode & 0o777) |\
+            ((mode & DMDIR ^ DMDIR) >> 16) |\
+            ((mode & DMDIR) >> 17) |\
+            ((mode & DMSYMLINK) >> 10) |\
+            ((mode & DMSYMLINK) >> 12) |\
+            ((mode & DMSETUID) >> 8) |\
+            ((mode & DMSETGID) >> 8) |\
+            ((mode & DMSTICKY) >> 7)
+
+
+def mode2plan(mode):
+    return (mode & 0o777) | \
+            ((mode & stat.S_IFDIR) << 17) |\
+            ((mode & stat.S_ISUID) << 8) |\
+            ((mode & stat.S_ISGID) << 8) |\
+            ((mode & stat.S_ISVTX) << 7) |\
+            (int(mode == stat.S_IFLNK) << 25)
 
 
 def hash8(obj):
@@ -456,14 +490,15 @@ class Server(object):
     A server interface to the protocol.
     Subclass this to provide service
     """
-    msize = 8192
     chatty = False
     readpool = []
     writepool = []
     activesocks = {}
 
     def __init__(self, listen, authmode=None, fs=None, user=None,
-            dom=None, key=None, chatty=False, dotu=False):
+            dom=None, key=None, chatty=False, dotu=False, msize=8192):
+        self.msize = msize
+
         if authmode == None:
             self.authfs = None
         elif authmode == 'pki':
@@ -737,11 +772,12 @@ class Server(object):
             req.ofcall.version = '9P2000'
             req.sock.marshal.dotu = 0
 
-        req.ofcall.msize = req.ifcall.msize
+        req.ofcall.msize = min(req.ifcall.msize, self.msize)
         self.respond(req, None)
 
     def rversion(self, req, error):
-        self.msize = req.ofcall.msize
+        # self.msize = req.ofcall.msize
+        pass
 
     def tauth(self, req):
         if self.authfs == None:
@@ -1075,11 +1111,12 @@ class Client(object):
     F = 13
 
     path = ''  # for 'getwd' equivalent
-    msize = 8192
 
-    def __init__(self, fd, credentials, authsrv=None, chatty=0, dotu=0):
+    def __init__(self, fd, credentials, authsrv=None, chatty=0, dotu=0,
+            msize=8192):
         self.credentials = credentials
         self.dotu = dotu
+        self.msize = msize
         self.fd = Sock(fd, dotu, chatty)
         self.login(authsrv, credentials)
 
@@ -1206,7 +1243,8 @@ class Client(object):
             ver = versionu
         else:
             ver = version
-        fcall = self._version(8 * 1024, ver)
+        fcall = self._version(self.msize, ver)
+        self.msize = fcall.msize
         if fcall.version != ver:
             raise ClientError("version mismatch: %r" % fcall.version)
 
