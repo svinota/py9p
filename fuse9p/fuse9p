@@ -5,6 +5,7 @@ import sys
 import getopt
 from py9p import py9p
 from py9p import fuse9p
+from py9p import version
 
 
 errcodes = {
@@ -21,7 +22,7 @@ or wrong keyfile"),
 
 def usage():
     print("""
-Usage: fuse9p [-d] [-c mode] [-k file] [-l user] [-p port] [-t secs] \
+Usage: fuse9p [-dPv] [-c mode] [-k file] [-l user] [-p port] [-t secs] \
 user@server:port mountpoint
 
  -c mode  -- authentication mode to use (none|pki)
@@ -30,6 +31,8 @@ user@server:port mountpoint
  -l user  -- username to use in authentication
  -p port  -- TCP port to use
  -t secs  -- timeout for the socket
+ -P       -- stay connected even in the case of network errors
+ -v       -- print py9p version
     """)
 
 
@@ -55,8 +58,7 @@ timeout = 10
 keep_reconnect = False
 
 try:
-    opts, args = getopt.getopt(args, "Pdc:k:l:p:t:")
-    assert len(args) == 2
+    opts, args = getopt.getopt(args, "Pdvc:k:l:p:t:")
 except:
     paluu("usage")
 
@@ -76,6 +78,14 @@ for opt, optarg in opts:
         timeout = optarg
     elif opt == "-P":
         keep_reconnect = True
+    elif opt == "-v":
+        print("py9p version %s" % (version))
+        sys.exit(0)
+
+try:
+    assert len(args) == 2
+except:
+    paluu("usage")
 
 try:
     target = []
