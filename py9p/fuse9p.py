@@ -10,6 +10,7 @@ import time
 import threading
 import marshal9p
 import py9p
+import traceback
 
 MIN_TFID = 64
 MAX_TFID = 1023
@@ -92,7 +93,12 @@ def guard(c):
         except py9p.RpcError as e:
             ret = rpccodes.get(e.message, -errno.EIO)
         except:
-            self._reconnect()
+            if self.debug:
+                traceback.print_exc()
+            if self.keep_reconnect:
+                self._reconnect()
+            else:
+                sys.exit(255)
         if tfid is not None:
             self.tfidcache.release(tfid)
         return ret
