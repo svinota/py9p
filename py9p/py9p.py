@@ -154,6 +154,10 @@ class ClientError(Error):
     pass
 
 
+class VersionError(Error):
+    pass
+
+
 def modetostr(mode):
     bits = ["---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"]
 
@@ -1246,7 +1250,7 @@ class Client(object):
         fcall = self._version(self.msize, ver)
         self.msize = fcall.msize
         if fcall.version != ver:
-            raise ClientError("version mismatch: %r" % fcall.version)
+            raise VersionError("version mismatch: %r" % fcall.version)
 
         fcall.afid = self.AFID
         try:
