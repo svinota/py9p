@@ -20,7 +20,7 @@ endif
 all:
 	@echo targets: dist, install
 
-clean: clean-version
+clean:
 	rm -rf dist build MANIFEST
 	find . -name "*pyc" -exec rm -f "{}" \;
 
