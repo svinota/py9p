@@ -421,6 +421,7 @@ class ClientFS(fuse.Fuse):
                 return -errno.EIO
         s = fStat(ret)
         self.client._clunk(tfid)
+        self.dircache[py9p.hash8(path)] = ret
         return s
 
     def getattr(self, path):
@@ -465,6 +466,8 @@ class ClientFS(fuse.Fuse):
         if dirs == -errno.EIO:
             dirs = []
 
+        if path == "/":
+            path = ""
         for i in dirs:
-            self.dircache[i.qid.path] = i
+            self.dircache[py9p.hash8("/".join((path,i.name)))] = i
             yield fuse.Direntry(i.name)
