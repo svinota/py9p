@@ -1044,7 +1044,7 @@ class Server(object):
         req.fid = req.sock.getfid(req.ifcall.fid)
         if not req.fid:
             return self.respond(req, Eunknownfid)
-        if hasattr(self.fs, 'clunk'):
+        if hasattr(self.fs, 'clunk') and not (req.fid.qid.type & QTAUTH):
             self.fs.clunk(self, req)
         else:
             self.respond(req, None)
