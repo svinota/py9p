@@ -203,6 +203,14 @@ class ClientFS(fuse.Fuse):
         self.fuse_args.add('big_writes')
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
+    def fsinit(self):
+        # daemon mode RNG hack for PyCrypto
+        try:
+            from Crypto import Random
+            Random.atfork()
+        except:
+            pass
+
     def _reconnect(self, init=False, dotu=1):
         """
         Start reconnection thread. When init=True, just probe
