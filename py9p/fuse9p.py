@@ -499,5 +499,5 @@ class ClientFS(fuse.Fuse):
         if path == "/":
             path = ""
         for i in dirs:
-            self.dircache[py9p.hash8("/".join((path,i.name)))] = i
+            self.dircache[py9p.hash8("/".join((path, i.name)))] = i
             yield fuse.Direntry(i.name)
