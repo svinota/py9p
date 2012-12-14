@@ -3,6 +3,8 @@
 import socket
 import sys
 import os
+import pwd
+import grp
 import fuse
 import stat
 import errno
