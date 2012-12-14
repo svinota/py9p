@@ -215,7 +215,16 @@ class ClientFS(fuse.Fuse):
                     args=(init, dotu))
             t.setDaemon(True)
             t.start()
-            self._connected_event.wait(self.timeout + 2)
+            if init:
+                # in the init state we MUST NOT leave
+                # any thread; all running threads will be
+                # suspended by FUSE in the "daemon"
+                # multithreaded mode
+                t.join()
+            else:
+                # otherwise, just run reconnection
+                # thread in the background
+                self._connected_event.wait(self.timeout + 2)
             if self.exit:
                 print(str(self.exit))
                 sys.exit(255)
