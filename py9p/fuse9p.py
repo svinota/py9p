@@ -240,20 +240,20 @@ class ClientFS(fuse.Fuse):
         """
         Reconnection thread code.
         """
-        try:
-            self.sock.close()
-        except:
-            pass
-
-        if self.address[0].find("/") > -1:
-            self.sock = socket.socket(socket.AF_UNIX)
-        else:
-            self.sock = socket.socket(socket.AF_INET)
-        self.sock.settimeout(self.timeout)
         while True:
+            try:
+                self.sock.close()
+            except:
+                pass
+
             try:
                 if self.debug:
                     print("trying to connect")
+                if self.address[0].find("/") > -1:
+                    self.sock = socket.socket(socket.AF_UNIX)
+                else:
+                    self.sock = socket.socket(socket.AF_INET)
+                self.sock.settimeout(self.timeout)
                 self.sock.connect(self.address)
                 self.client = py9p.Client(
                         fd=self.sock,
