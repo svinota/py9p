@@ -70,8 +70,8 @@ class LocalFs(object):
         qid = py9p.Qid(type, 0, py9p.hash8(f))
         if self.dotu:
             if stat.S_ISLNK(s.st_mode):
+                res = py9p.DMSYMLINK
                 ext = os.readlink(f)
-                ext = os.path.join(os.path.dirname(f), ext)
             elif stat.S_ISCHR(s.st_mode):
                 ext = "c %d %d" % (os.major(s.st_rdev), os.minor(s.st_rdev))
             elif stat.S_ISBLK(s.st_mode):
@@ -92,6 +92,7 @@ class LocalFs(object):
 
     def open(self, srv, req):
         f = self.getfile(req.fid.qid.path)
+        s = _os(os.lstat, f.localpath)
         if not f:
             srv.respond(req, "unknown file")
             return
@@ -113,7 +114,7 @@ class LocalFs(object):
                 m = "r+b"
         else:                # py9p.OREAD and otherwise
             m = "rb"
-        if not (f.qid.type & py9p.QTDIR):
+        if not (f.qid.type & py9p.QTDIR) and not stat.S_ISLNK(s.st_mode):
             f.fd = _os(file, f.localpath, m)
         srv.respond(req, None)
 
@@ -190,6 +191,8 @@ class LocalFs(object):
         if req.ifcall.perm & py9p.DMDIR:
             perm = req.ifcall.perm & (~0777 | (f.mode & 0777))
             _os(os.mkdir, name, req.ifcall.perm & ~(py9p.DMDIR))
+        elif req.ifcall.perm & py9p.DMSYMLINK and self.dotu:
+            _os(os.symlink, req.ifcall.extension, name)
         else:
             perm = req.ifcall.perm & (~0666 | (f.mode & 0666))
             _os(file, name, "w+").close()
@@ -238,11 +241,15 @@ class LocalFs(object):
 
     def read(self, srv, req):
         f = self.getfile(req.fid.qid.path)
+        s = _os(os.lstat, f.localpath)
         if not f:
             srv.respond(req, "unknown file")
             return
 
-        if f.qid.type & py9p.QTDIR:
+        if stat.S_ISLNK(s.st_mode) and self.dotu:
+            d = self.pathtodir(f.localpath)
+            req.ofcall.data = d.extension
+        elif f.qid.type & py9p.QTDIR:
             # no need to add anything to self.files yet. wait until they walk to it
             l = os.listdir(f.localpath)
             l = filter(lambda x : x not in ('.','..'), l)
