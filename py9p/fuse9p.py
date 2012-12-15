@@ -446,6 +446,8 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def readlink(self, tfid, path):
+        if py9p.hash8(path) in self.dircache:
+            return self.dircache[py9p.hash8(path)].extension
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         self.client._open(tfid, py9p.OREAD)
