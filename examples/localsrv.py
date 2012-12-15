@@ -1,58 +1,61 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python
 
 import sys
-import socket
 import stat
 import os.path
-import copy
-import time
 import pwd
 import grp
 
 from py9p import py9p
 
+
 def _os(func, *args):
     try:
         return func(*args)
-    except OSError,e:
+    except OSError, e:
         raise py9p.ServerError(e.args)
-    except IOError,e:
+    except IOError, e:
         raise py9p.ServerError(e.args)
+
 
 def _nf(func, *args):
     try:
         return func(*args)
-    except py9p.ServerError,e:
+    except py9p.ServerError:
         return
+
 
 def uidname(u):
     try:
         return "%s" % pwd.getpwuid(u).pw_name
-    except KeyError,e:
+    except KeyError:
         return "%d" % u
+
 
 def gidname(g):
     try:
         return "%s" % grp.getgrgid(g).gr_name
-    except KeyError,e:
+    except KeyError:
         return "%d" % g
+
 
 class LocalFs(object):
     """
     A local filesystem device.
     """
 
-    files={}
+    files = {}
+
     def __init__(self, root, cancreate=0, dotu=0):
         self.dotu = dotu
-        self.cancreate = cancreate 
+        self.cancreate = cancreate
         self.root = self.pathtodir(root)
         self.root.parent = self.root
         self.root.localpath = root
         self.files[self.root.qid.path] = self.root
 
     def getfile(self, path):
-        if not self.files.has_key(path):
+        if path not in self.files:
             return None
         return self.files[path]
 
@@ -108,7 +111,7 @@ class LocalFs(object):
             if not self.cancreate:
                 srv.respond(req, "read-only file server")
                 return
-            if m & OTRUNC:
+            if m & py9p.OTRUNC:
                 m = "w+b"
             else:
                 m = "r+b"
@@ -152,7 +155,7 @@ class LocalFs(object):
                     req.ofcall.wqid.append(d.qid)
                     f = d
                 else:
-                    srv.respond(req, "can't find %s"%path)
+                    srv.respond(req, "can't find %s" % path)
                     return
 
         req.ofcall.nwqid = len(req.ofcall.wqid)
@@ -187,7 +190,7 @@ class LocalFs(object):
         if not f:
             srv.respond(req, 'unknown file')
             return
-        name = f.localpath+'/'+req.ifcall.name
+        name = f.localpath + '/' + req.ifcall.name
         if req.ifcall.perm & py9p.DMDIR:
             perm = req.ifcall.perm & (~0777 | (f.mode & 0777))
             _os(os.mkdir, name, req.ifcall.perm & ~(py9p.DMDIR))
@@ -203,7 +206,7 @@ class LocalFs(object):
                 else:
                     m = "r+b"        # almost
             elif (req.ifcall.mode & 3) == py9p.ORDWR:
-                if m & OTRUNC:
+                if m & py9p.OTRUNC:
                     m = "w+b"
                 else:
                     m = "r+b"
@@ -225,7 +228,7 @@ class LocalFs(object):
         if not f:
             srv.respond(req, 'unknown file')
             return
-        f = self.files[req.fid.qid.path]        
+        f = self.files[req.fid.qid.path]
         if hasattr(f, 'fd') and f.fd is not None:
             f.fd.close()
             f.fd = None
@@ -250,12 +253,13 @@ class LocalFs(object):
             d = self.pathtodir(f.localpath)
             req.ofcall.data = d.extension
         elif f.qid.type & py9p.QTDIR:
-            # no need to add anything to self.files yet. wait until they walk to it
+            # no need to add anything to self.files yet
+            # wait until they walk to it
             l = os.listdir(f.localpath)
-            l = filter(lambda x : x not in ('.','..'), l)
+            l = filter(lambda x: x not in ('.', '..'), l)
             req.ofcall.stat = []
             for x in l:
-                req.ofcall.stat.append(self.pathtodir(f.localpath+'/'+x))
+                req.ofcall.stat.append(self.pathtodir(f.localpath + '/' + x))
         else:
             f.fd.seek(req.ifcall.offset)
             req.ofcall.data = f.fd.read(req.ifcall.count)
@@ -276,9 +280,13 @@ class LocalFs(object):
         req.ofcall.count = len(req.ifcall.data)
         srv.respond(req, None)
 
+
 def usage(prog):
-    print >>sys.stderr, "usage:  %s [-dcD] [-p port] [-r root] [-l listen] [-a authmode] [srvuser domain]" % prog
+    print >> sys.stderr, \
+            "usage:  %s [-dcD] [-p port] [-r root] " \
+            "[-l listen] [-a authmode] [srvuser domain]" % prog
     sys.exit(1)
+
 
 def main():
     import getopt
@@ -290,9 +298,7 @@ def main():
     port = py9p.PORT
     listen = '0.0.0.0'
     root = '/'
-    mods = []
     user = None
-    noauth = 0
     chatty = 0
     cancreate = 0
     dotu = 0
@@ -302,10 +308,10 @@ def main():
     key = None
 
     try:
-        opt,args = getopt.getopt(args, "dDcp:r:l:a:")
+        opt, args = getopt.getopt(args, "dDcp:r:l:a:")
     except:
         usage(prog)
-    for opt,optarg in opt:
+    for opt, optarg in opt:
         if opt == "-D":
             chatty = 1
         if opt == "-d":
@@ -334,11 +340,18 @@ def main():
     elif authmode == 'pki':
         py9p.pki = __import__("py9p.pki").pki
         user = 'admin'
-    elif authmode != None and authmode != 'none':
-        print >>sys.stderr, "unknown auth type: %s; accepted: pki, sk1, none"%authmode
+    elif authmode is not None and authmode != 'none':
+        print >> sys.stderr, \
+            "unknown auth type: %s; accepted: pki, sk1, none" % authmode
         sys.exit(1)
 
-    srv = py9p.Server(listen=(listen, port), authmode=authmode, user=user, dom=dom, key=key, chatty=chatty, dotu=dotu)
+    srv = py9p.Server(listen=(listen, port),
+            authmode=authmode,
+            user=user,
+            dom=dom,
+            key=key,
+            chatty=chatty,
+            dotu=dotu)
     srv.mount(LocalFs(root, cancreate, dotu))
     srv.serve()
 

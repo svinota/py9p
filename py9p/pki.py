@@ -233,7 +233,7 @@ def strtoprivkey(data, password):
     else:
         keyData = base64.decodestring(''.join(data[1:-1]))
     decodedKey = asn1parse(keyData)
-    if type(decodedKey[0]) == type([]):
+    if isinstance(decodedKey[0], list):
         decodedKey = decodedKey[0]  # this happens with encrypted keys
     if kind == 'RSA':
         n, e, d, p, q = decodedKey[1:6]
@@ -247,7 +247,7 @@ def getprivkey(uname, priv=None, passphrase=None):
     if not uname:
         raise AuthError("no uname")
 
-    if priv == None:
+    if priv is None:
         f = gethome(uname)
         if not f:
             raise BadKeyError("no home dir for user %s" % uname)
@@ -309,7 +309,7 @@ class AuthFs(object):
             raise AuthError('no uname')
         if uname in self.pubkeys:
             return self.pubkeys[uname]
-        elif pub == None:
+        elif pub is None:
             f = gethome(uname)
             if not f:
                 raise BadKeyError("no home for user %s" % uname)

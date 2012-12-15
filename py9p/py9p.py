@@ -503,7 +503,7 @@ class Server(object):
             dom=None, key=None, chatty=False, dotu=False, msize=8192):
         self.msize = msize
 
-        if authmode == None:
+        if authmode is None:
             self.authfs = None
         elif authmode == 'pki':
             import pki
@@ -667,7 +667,7 @@ class Server(object):
                 print >>sys.stderr, "error in respond: ", traceback.print_exc()
                 return -1
         else:
-            raise ServerError("can not handle message type " + \
+            raise ServerError("can not handle message type " +
                     cmdName[req.ifcall.type])
 
         req.ofcall.tag = req.ifcall.tag
@@ -720,7 +720,7 @@ class Server(object):
             except Exception, e:
                 if self.chatty:
                     print >>sys.stderr, traceback.print_exc()
-                self.respond(req, 'unhandled internal exception: ' + \
+                self.respond(req, 'unhandled internal exception: ' +
                         str(e.args[0]))
         else:
             self.respond(req, "unhandled message: %s" % (
@@ -784,8 +784,8 @@ class Server(object):
         pass
 
     def tauth(self, req):
-        if self.authfs == None:
-            self.respond(req, "%s: authentication not required" % \
+        if self.authfs is None:
+            self.respond(req, "%s: authentication not required" %
                     (sys.argv[0]))
             return
 
@@ -822,7 +822,7 @@ class Server(object):
                 return
             elif self.chatty:
                 print >>sys.stderr, "authenticated as %r" % req.ifcall.uname
-        elif self.authmode != None:
+        elif self.authmode is not None:
             self.respond(req, 'authentication not complete')
 
         req.fid.uid = req.ifcall.uname
@@ -891,7 +891,7 @@ class Server(object):
             self.respond(req, "no walk function")
 
     def rwalk(self, req, error):
-        if error or (len(req.ofcall.wqid) < len(req.ifcall.wname) and \
+        if error or (len(req.ofcall.wqid) < len(req.ifcall.wname) and
                 len(req.ifcall.wname) > 0):
             if req.ifcall.fid != req.ifcall.newfid and req.newfid:
                 req.sock.delfid(req.ifcall.newfid)
@@ -966,7 +966,7 @@ class Server(object):
         req.ofcall.iounit = self.msize - IOHDRSZ
 
     def bufread(self, req, buf):
-        req.ofcall.data = buf[req.ifcall.offset: req.ifcall.offset + \
+        req.ofcall.data = buf[req.ifcall.offset: req.ifcall.offset +
                 req.ifcall.count]
         return self.respond(req, None)
 
@@ -976,8 +976,8 @@ class Server(object):
             return self.respond(req, Eunknownfid)
         if req.ifcall.count < 0:
             return self.respond(req, Ebotch)
-        if req.ifcall.offset < 0 or ((req.fid.qid.type & QTDIR) and \
-                (req.ifcall.offset != 0) and \
+        if req.ifcall.offset < 0 or ((req.fid.qid.type & QTDIR) and
+                (req.ifcall.offset != 0) and
                 (req.ifcall.offset != req.fid.diroffset)):
             return self.respond(req, Ebadoffset)
         if req.fid.qid.type & QTAUTH and self.authfs:
@@ -1030,7 +1030,7 @@ class Server(object):
             req.ifcall.count = self.msize - IOHDRSZ
         o = req.fid.omode & 3
         if o != OWRITE and o != ORDWR:
-            return self.respond(req, \
+            return self.respond(req,
                     "write on fid with open mode 0x%ux" % req.fid.omode)
         if hasattr(self.fs, 'write'):
             self.fs.write(self, req)
@@ -1261,7 +1261,7 @@ class Client(object):
         if fcall.afid != NOFID:
             fcall.aqid = rfcall.aqid
 
-            if credentials.authmode == None:
+            if credentials.authmode is None:
                 raise ClientError('no authentication method')
             elif credentials.authmode == 'sk1':
                 import sk1
