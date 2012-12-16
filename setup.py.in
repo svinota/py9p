@@ -39,9 +39,11 @@ setup(name='py9p',
         ],
     scripts=[
         'fuse9p/fuse9p',
+        '9pfs/9pfs',
         ],
     data_files=[
         (man1dir, ['fuse9p/fuse9p.1',]),
+        (man1dir, ['9pfs/9pfs.1',]),
         ],
     classifiers=[
         'License :: OSI Approved :: MIT License',
