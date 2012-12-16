@@ -1,6 +1,6 @@
 Name: python-module-py9p
-Version: 1.0.6
-Release: alt2
+Version: 1.0.7
+Release: alt1
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Python
@@ -32,6 +32,20 @@ in Plan9, 9P can be used also for composite file access, RPC etc.
 
 This package contains FUSE client for the 9p protocol.
 
+%package -n 9pfs
+Summary: Plan9 filesystem server
+License: MIT
+Group: Development/Python
+URL: https://github.com/svinota/py9p
+Requires: %name = %version-%release
+
+%description -n 9pfs
+Protocol 9P is developed for Plan9 operating system from Bell Labs.
+It is used for remote file access, and since files are key objects
+in Plan9, 9P can be used also for composite file access, RPC etc.
+
+This package contains simple 9p2000 file server.
+
 %prep
 %setup -q -n py9p-%{version}
 
@@ -46,7 +60,16 @@ This package contains FUSE client for the 9p protocol.
 %_bindir/fuse9p
 %_man1dir/fuse9p.*
 
+%files -n 9pfs
+%_bindir/9pfs
+%_man1dir/9pfs.*
+
 %changelog
+* Sun Dec 16 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.7-alt1
+- pki auth fixed
+- multiple fuse9p fixes
+- 9pfs package
+
 * Sat Dec 01 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.6-alt2
 - move mode2* and open2* routines to py9p module
 - move FUSE client to the separated library
