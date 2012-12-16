@@ -335,7 +335,8 @@ class ClientFS(fuse.Fuse):
     def _wstat(self, tfid, path,
             uid=py9p.ERRUNDEF,
             gid=py9p.ERRUNDEF,
-            mode=py9p.ERRUNDEF):
+            mode=py9p.ERRUNDEF,
+            newname=None):
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         if self.dotu:
@@ -348,7 +349,7 @@ class ClientFS(fuse.Fuse):
                 atime=int(time.time()),
                 mtime=int(time.time()),
                 length=py9p.ERRUNDEF,
-                name=path.split("/")[-1],
+                name=newname or path.split("/")[-1],
                 uid="",
                 gid="",
                 muid="",
@@ -366,7 +367,7 @@ class ClientFS(fuse.Fuse):
                 atime=int(time.time()),
                 mtime=int(time.time()),
                 length=py9p.ERRUNDEF,
-                name=path.split("/")[-1],
+                name=newname or path.split("/")[-1],
                 uid=pwd.getpwuid(uid).pw_name,
                 gid=grp.getgrgid(gid).gr_name,
                 muid=""), ]
@@ -454,6 +455,49 @@ class ClientFS(fuse.Fuse):
             data += ret.data
             offset += len(ret.data)
         return data[:size]
+
+    @guard
+    def rename(self, tfid, path, dest):
+        # the most complicated routine :|
+        # 9p protocol has no "rename" neither "move" call
+        # in the meaning of Linux vfs, it can only change
+        # the name of an entry w/o moving it from dir to
+        # dir, which can be done with wstat()
+
+        # if we can use wstat():
+        if path.split("/")[:-1] == dest.split("/")[:-1]:
+            return self._wstat(path, newname=dest.split("/")[-1])
+
+        # it is not simple rename, fall back to copy/delete:
+        #
+        # get source and destination
+        source = self._getattr(path)
+        destination = self._getattr(dest)
+        # abort on EIO
+        if -errno.EIO in (source, destination):
+            return -errno.EIO
+        # create the destination file
+        if destination == -errno.ENOENT:
+            self.mknod(dest, source.st_mode, 0)
+        if source.st_mode & stat.S_IFDIR:
+            # move all the content to the new directory
+            for i in self._readdir(path, 0):
+                self.rename(
+                        "/".join((path, i.name)),
+                        "/".join((dest, i.name)))
+        else:
+            # open both files
+            sf = self.open(path, os.O_RDONLY)
+            df = self.open(dest, os.O_WRONLY | os.O_TRUNC)
+            # copy the content
+            for i in range((source.st_size + self.msize - 1) / self.msize):
+                block = self.read(path, self.msize, i * self.msize, sf)
+                self.write(dest, block, i * self.msize, df)
+            # close files
+            self.release(path, 0, sf)
+            self.release(dest, 0, df)
+        # remove the source
+        self.unlink(path)
 
     @guard
     def release(self, tfid, path, flags, f):
