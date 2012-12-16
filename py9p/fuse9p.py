@@ -38,6 +38,7 @@ MAX_TFID = 1023
 MIN_FID = 1024
 MAX_FID = 65535
 MAX_RECONNECT_INTERVAL = 1024
+IOUNIT = 1024 * 16
 
 rpccodes = {
         "duplicate fid": -errno.EBADFD,
@@ -145,6 +146,7 @@ class FidCache(dict):
         dict.__init__(self)
         self.start = start
         self.limit = limit
+        self.iounit = IOUNIT
         self.fids = list(range(self.start, self.limit + 1))
 
     def acquire(self):
@@ -153,7 +155,7 @@ class FidCache(dict):
         """
         if len(self.fids) < 1:
             raise NoFidError()
-        return Fid(self.fids.pop(0))
+        return Fid(self.fids.pop(0), self.iounit)
 
     def release(self, f):
         """
@@ -172,8 +174,9 @@ class Fid(object):
 
     See: write(), read(), release()
     """
-    def __init__(self, fid):
+    def __init__(self, fid, iounit=IOUNIT):
         self.fid = fid
+        self.iounit = iounit
 
 
 class ClientFS(fuse.Fuse):
@@ -198,12 +201,14 @@ class ClientFS(fuse.Fuse):
         self.credentials = credentials
         self.debug = debug
         self.timeout = timeout
-        self.msize = 1024 * 16
+        self.msize = IOUNIT
         self.sock = None
         self.exit = None
         self.dotu = 1
         self.keep_reconnect = keep_reconnect
         self._lock = threading.Lock()
+        self._rlock = threading.Lock()
+        self._wlock = threading.Lock()
         self._interval = 1
         self._reconnect_event = threading.Event()
         self._connected_event = threading.Event()
@@ -288,6 +293,7 @@ class ClientFS(fuse.Fuse):
                         credentials=self.credentials,
                         dotu=dotu, msize=self.msize)
                 self.msize = self.client.msize
+                self.fidcache.iounit = self.client.msize - py9p.IOHDRSZ
                 self._connected_event.set()
                 self._lock.release()
                 return
@@ -325,7 +331,8 @@ class ClientFS(fuse.Fuse):
         try:
             self.client._walk(self.client.ROOT,
                     f.fid, filter(None, path.split("/")))
-            self.client._open(f.fid, py9p.open2plan(mode))
+            fcall = self.client._open(f.fid, py9p.open2plan(mode))
+            f.iounit = fcall.iounit
             return f
         except:
             self.fidcache.release(f)
@@ -335,7 +342,8 @@ class ClientFS(fuse.Fuse):
     def _wstat(self, tfid, path,
             uid=py9p.ERRUNDEF,
             gid=py9p.ERRUNDEF,
-            mode=py9p.ERRUNDEF):
+            mode=py9p.ERRUNDEF,
+            newname=None):
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         if self.dotu:
@@ -348,7 +356,7 @@ class ClientFS(fuse.Fuse):
                 atime=int(time.time()),
                 mtime=int(time.time()),
                 length=py9p.ERRUNDEF,
-                name=path.split("/")[-1],
+                name=newname or path.split("/")[-1],
                 uid="",
                 gid="",
                 muid="",
@@ -366,7 +374,7 @@ class ClientFS(fuse.Fuse):
                 atime=int(time.time()),
                 mtime=int(time.time()),
                 length=py9p.ERRUNDEF,
-                name=path.split("/")[-1],
+                name=newname or path.split("/")[-1],
                 uid=pwd.getpwuid(uid).pw_name,
                 gid=grp.getgrgid(gid).gr_name,
                 muid=""), ]
@@ -439,21 +447,80 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def write(self, tfid, path, buf, offset, f):
-        l = len(buf)
-        for i in range(l / self.msize + 1):
-            start = i * self.msize
-            length = self.msize + min(0, (l - ((i + 1) * self.msize)))
-            self.client._write(f.fid, offset + start, buf[start:length])
-        return l
+        if py9p.hash8(path) in self.dircache:
+            del self.dircache[py9p.hash8(path)]
+        with self._wlock:
+            size = len(buf)
+            for i in range((size + f.iounit - 1) / f.iounit):
+                start = i * f.iounit
+                length = start + f.iounit
+                self.client._write(f.fid, offset + start,
+                        buf[start:length])
+            return size
 
     @guard
     def read(self, tfid, path, size, offset, f):
-        data = bytes()
-        for i in range(size / self.msize + 1):
-            ret = self.client._read(f.fid, offset, self.msize)
-            data += ret.data
-            offset += len(ret.data)
-        return data[:size]
+        with self._rlock:
+            data = bytes()
+            i = 0
+            while True:
+                # we do not rely nor on msize, neither on iounit,
+                # so, shift offset only with real data read
+                ret = self.client._read(f.fid, offset,
+                        min(size - len(data), f.iounit))
+                data += ret.data
+                offset += len(ret.data)
+                if size <= len(data) or len(ret.data) == 0:
+                    break
+                i += 1
+            return data[:size]
+
+    @guard
+    def rename(self, tfid, path, dest):
+        # the most complicated routine :|
+        # 9p protocol has no "rename" neither "move" call
+        # in the meaning of Linux vfs, it can only change
+        # the name of an entry w/o moving it from dir to
+        # dir, which can be done with wstat()
+
+        for i in (path, dest):
+            if py9p.hash8(i) in self.dircache:
+                del self.dircache[py9p.hash8(i)]
+
+        # if we can use wstat():
+        if path.split("/")[:-1] == dest.split("/")[:-1]:
+            return self._wstat(path, newname=dest.split("/")[-1])
+
+        # it is not simple rename, fall back to copy/delete:
+        #
+        # get source and destination
+        source = self._getattr(path)
+        destination = self._getattr(dest)
+        # abort on EIO
+        if -errno.EIO in (source, destination):
+            return -errno.EIO
+        # create the destination file
+        if destination == -errno.ENOENT:
+            self.mknod(dest, source.st_mode, 0)
+        if source.st_mode & stat.S_IFDIR:
+            # move all the content to the new directory
+            for i in self._readdir(path, 0):
+                self.rename(
+                        "/".join((path, i.name)),
+                        "/".join((dest, i.name)))
+        else:
+            # open both files
+            sf = self.open(path, os.O_RDONLY)
+            df = self.open(dest, os.O_WRONLY | os.O_TRUNC)
+            # copy the content
+            for i in range((source.st_size + self.msize - 1) / self.msize):
+                block = self.read(path, self.msize, i * self.msize, sf)
+                self.write(dest, block, i * self.msize, df)
+            # close files
+            self.release(path, 0, sf)
+            self.release(dest, 0, df)
+        # remove the source
+        self.unlink(path)
 
     @guard
     def release(self, tfid, path, flags, f):
