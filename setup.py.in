@@ -56,10 +56,14 @@ setup(name='py9p',
 ==========================
 
 The library allows you to use 9P protocol in your
-applications.
+applications. Please note, that the library is not
+fully compatible with the original version by
+Andrey Mirtchovski.
 
-Please note, that the library is not fully compatible
-with the initial version by Andrey Mirtchovski.
+Also, this package provides two components:
+
+ * fuse9p -- FUSE 9p client
+ * 9pfs -- simple file server (alpha state)
 
 Links
 =====
@@ -70,6 +74,16 @@ Links
 
 Changes
 =======
+
+1.0.7 -- Mesoarchean
+--------------------
+
+ * PKI auth fixed
+ * fuse9p: "persistent connection" feature, -P
+ * fuse9p: symlink support
+ * fuse9p: multiple fixes of the background mode
+ * 9pfs: new component, that grow up from localfs
+ * py9p: provide mode conversion routines
 
 1.0.6 -- Paleoarchean
 ---------------------
