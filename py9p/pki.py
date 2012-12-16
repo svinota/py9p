@@ -1,3 +1,25 @@
+# Copyright (c) 2008-2011 Tim Newsham, Andrey Mirtchovski
+# Copyright (c) 2011-2012 Peter V. Saveliev
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 """
 Implementation of basic RSA-key digital signature.
 
@@ -233,7 +255,7 @@ def strtoprivkey(data, password):
     else:
         keyData = base64.decodestring(''.join(data[1:-1]))
     decodedKey = asn1parse(keyData)
-    if type(decodedKey[0]) == type([]):
+    if isinstance(decodedKey[0], list):
         decodedKey = decodedKey[0]  # this happens with encrypted keys
     if kind == 'RSA':
         n, e, d, p, q = decodedKey[1:6]
@@ -247,7 +269,7 @@ def getprivkey(uname, priv=None, passphrase=None):
     if not uname:
         raise AuthError("no uname")
 
-    if priv == None:
+    if priv is None:
         f = gethome(uname)
         if not f:
             raise BadKeyError("no home dir for user %s" % uname)
@@ -309,7 +331,7 @@ class AuthFs(object):
             raise AuthError('no uname')
         if uname in self.pubkeys:
             return self.pubkeys[uname]
-        elif pub == None:
+        elif pub is None:
             f = gethome(uname)
             if not f:
                 raise BadKeyError("no home for user %s" % uname)

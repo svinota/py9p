@@ -1,8 +1,29 @@
-#!/usr/bin/python
+# Copyright (c) 2011-2012 Peter V. Saveliev
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import socket
 import sys
 import os
+import pwd
+import grp
 import fuse
 import stat
 import errno
@@ -10,6 +31,7 @@ import time
 import threading
 import marshal9p
 import py9p
+import traceback
 
 MIN_TFID = 64
 MAX_TFID = 1023
@@ -92,7 +114,12 @@ def guard(c):
         except py9p.RpcError as e:
             ret = rpccodes.get(e.message, -errno.EIO)
         except:
-            self._reconnect()
+            if self.debug:
+                traceback.print_exc()
+            if self.keep_reconnect:
+                self._reconnect()
+            else:
+                sys.exit(255)
         if tfid is not None:
             self.tfidcache.release(tfid)
         return ret
@@ -174,6 +201,7 @@ class ClientFS(fuse.Fuse):
         self.msize = 1024 * 16
         self.sock = None
         self.exit = None
+        self.dotu = 1
         self.keep_reconnect = keep_reconnect
         self._lock = threading.Lock()
         self._interval = 1
@@ -194,17 +222,36 @@ class ClientFS(fuse.Fuse):
         self.fuse_args.add('big_writes')
         self.fuse_args.mountpoint = os.path.realpath(mountpoint)
 
-    def _reconnect(self, init=False):
+    def fsinit(self):
+        # daemon mode RNG hack for PyCrypto
+        try:
+            from Crypto import Random
+            Random.atfork()
+        except:
+            pass
+
+    def _reconnect(self, init=False, dotu=1):
         """
         Start reconnection thread. When init=True, just probe
         the connection and return even if keep_reconnect=True.
         """
         if self._lock.acquire(False):
             self._connected_event.clear()
-            t = threading.Thread(target=self._reconnect_target, args=(init,))
+            t = threading.Thread(
+                    target=self._reconnect_target,
+                    args=(init, dotu))
             t.setDaemon(True)
             t.start()
-            self._connected_event.wait(self.timeout + 2)
+            if init:
+                # in the init state we MUST NOT leave
+                # any thread; all running threads will be
+                # suspended by FUSE in the "daemon"
+                # multithreaded mode
+                t.join()
+            else:
+                # otherwise, just run reconnection
+                # thread in the background
+                self._connected_event.wait(self.timeout + 2)
             if self.exit:
                 print(str(self.exit))
                 sys.exit(255)
@@ -216,33 +263,40 @@ class ClientFS(fuse.Fuse):
         self._interval = min(self._interval * 2, MAX_RECONNECT_INTERVAL)
         return self._interval
 
-    def _reconnect_target(self, init=False):
+    def _reconnect_target(self, init=False, dotu=1):
         """
         Reconnection thread code.
         """
-        try:
-            self.sock.close()
-        except:
-            pass
-
-        if self.address[0].find("/") > -1:
-            self.sock = socket.socket(socket.AF_UNIX)
-        else:
-            self.sock = socket.socket(socket.AF_INET)
-        self.sock.settimeout(self.timeout)
         while True:
+            try:
+                self.sock.close()
+            except:
+                pass
+
             try:
                 if self.debug:
                     print("trying to connect")
+                if self.address[0].find("/") > -1:
+                    self.sock = socket.socket(socket.AF_UNIX)
+                else:
+                    self.sock = socket.socket(socket.AF_INET)
+                self.sock.settimeout(self.timeout)
                 self.sock.connect(self.address)
                 self.client = py9p.Client(
                         fd=self.sock,
                         chatty=self.debug,
                         credentials=self.credentials,
-                        dotu=1, msize=self.msize)
+                        dotu=dotu, msize=self.msize)
                 self.msize = self.client.msize
                 self._connected_event.set()
                 self._lock.release()
+                return
+            except py9p.VersionError:
+                if dotu:
+                    self.dotu = 0
+                    self._reconnect_target(init, 0)
+                else:
+                    self.exit = Exception("protocol negotiation error")
                 return
             except Exception as e:
                 if self.keep_reconnect:
@@ -261,6 +315,7 @@ class ClientFS(fuse.Fuse):
                     self._reconnect_event.clear()
                 else:
                     self.exit = e
+                    self._lock.release()
                     self._connected_event.set()
                     return
 
@@ -283,23 +338,38 @@ class ClientFS(fuse.Fuse):
             mode=py9p.ERRUNDEF):
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
-        stats = [py9p.Dir(
-            dotu=1,
-            type=0,
-            dev=0,
-            qid=py9p.Qid(0, 0, py9p.hash8(path)),
-            mode=mode,
-            atime=int(time.time()),
-            mtime=int(time.time()),
-            length=py9p.ERRUNDEF,
-            name=path.split("/")[-1],
-            uid="",
-            gid="",
-            muid="",
-            extension="",
-            uidnum=uid,
-            gidnum=gid,
-            muidnum=py9p.ERRUNDEF), ]
+        if self.dotu:
+            stats = [py9p.Dir(
+                dotu=1,
+                type=0,
+                dev=0,
+                qid=py9p.Qid(0, 0, py9p.hash8(path)),
+                mode=mode,
+                atime=int(time.time()),
+                mtime=int(time.time()),
+                length=py9p.ERRUNDEF,
+                name=path.split("/")[-1],
+                uid="",
+                gid="",
+                muid="",
+                extension="",
+                uidnum=uid,
+                gidnum=gid,
+                muidnum=py9p.ERRUNDEF), ]
+        else:
+            stats = [py9p.Dir(
+                dotu=0,
+                type=0,
+                dev=0,
+                qid=py9p.Qid(0, 0, py9p.hash8(path)),
+                mode=mode,
+                atime=int(time.time()),
+                mtime=int(time.time()),
+                length=py9p.ERRUNDEF,
+                name=path.split("/")[-1],
+                uid=pwd.getpwuid(uid).pw_name,
+                gid=grp.getgrgid(gid).gr_name,
+                muid=""), ]
         self.client._wstat(tfid, stats)
         self.client._clunk(tfid)
 
@@ -324,6 +394,8 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def symlink(self, tfid, target, path):
+        if not self.dotu:
+            return -errno.ENOSYS
         self.client._walk(self.client.ROOT, tfid,
                 filter(None, path.split("/"))[:-1])
         self.client._create(tfid, filter(None, path.split("/"))[-1],
@@ -393,6 +465,8 @@ class ClientFS(fuse.Fuse):
 
     @guard
     def readlink(self, tfid, path):
+        if py9p.hash8(path) in self.dircache:
+            return self.dircache[py9p.hash8(path)].extension
         self.client._walk(self.client.ROOT,
                 tfid, filter(None, path.split("/")))
         self.client._open(tfid, py9p.OREAD)
@@ -415,6 +489,7 @@ class ClientFS(fuse.Fuse):
                 return -errno.EIO
         s = fStat(ret)
         self.client._clunk(tfid)
+        self.dircache[py9p.hash8(path)] = ret
         return s
 
     def getattr(self, path):
@@ -443,7 +518,7 @@ class ClientFS(fuse.Fuse):
             if len(ret.data) == 0:
                 break
             offset += len(ret.data)
-            p9 = marshal9p.Marshal9P(dotu=1)
+            p9 = marshal9p.Marshal9P(dotu=self.dotu)
             p9.setBuf(ret.data)
             fcall = py9p.Fcall(py9p.Rstat)
             p9.decstat(fcall, 0)
@@ -459,6 +534,8 @@ class ClientFS(fuse.Fuse):
         if dirs == -errno.EIO:
             dirs = []
 
+        if path == "/":
+            path = ""
         for i in dirs:
-            self.dircache[i.qid.path] = i
+            self.dircache[py9p.hash8("/".join((path, i.name)))] = i
             yield fuse.Direntry(i.name)
