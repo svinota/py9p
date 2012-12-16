@@ -464,6 +464,10 @@ class ClientFS(fuse.Fuse):
         # the name of an entry w/o moving it from dir to
         # dir, which can be done with wstat()
 
+        for i in (path, dest):
+            if py9p.hash8(i) in self.dircache:
+                del self.dircache[py9p.hash8(i)]
+
         # if we can use wstat():
         if path.split("/")[:-1] == dest.split("/")[:-1]:
             return self._wstat(path, newname=dest.split("/")[-1])
