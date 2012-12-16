@@ -40,7 +40,7 @@ clean: clean-version
 	find . -name "*pyc" -exec rm -f "{}" \;
 
 check:
-	for i in py9p fuse9p/fuse9p; \
+	for i in py9p fuse9p/fuse9p 9pfs/9pfs; \
 		do pep8 $$i || exit 1; \
 		pyflakes $$i || exit 2; \
 		done

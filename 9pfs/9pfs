@@ -27,6 +27,8 @@ import stat
 import os.path
 import pwd
 import grp
+import getopt
+import getpass
 
 from py9p import py9p
 
@@ -305,15 +307,12 @@ class LocalFs(object):
 
 def usage(prog):
     print >> sys.stderr, \
-            "usage:  %s [-dcD] [-p port] [-r root] " \
-            "[-l listen] [-a authmode] [srvuser domain]" % prog
+            "usage:  %s [-dDw] [-c mode] [-p port] [-r root] " \
+            "[-a address] [srvuser [domain]]" % prog
     sys.exit(1)
 
 
 def main():
-    import getopt
-    import getpass
-
     prog = sys.argv[0]
     args = sys.argv[1:]
 
@@ -330,23 +329,23 @@ def main():
     key = None
 
     try:
-        opt, args = getopt.getopt(args, "dDcp:r:l:a:")
+        opt, args = getopt.getopt(args, "dDwp:r:a:c:")
     except:
         usage(prog)
     for opt, optarg in opt:
-        if opt == "-D":
-            chatty = 1
         if opt == "-d":
+            chatty = 1
+        if opt == "-D":
             dotu = 1
-        if opt == '-c':
+        if opt == '-w':
             cancreate = 1
         if opt == '-r':
             root = optarg
         if opt == "-p":
             port = int(optarg)
-        if opt == '-l':
-            listen = optarg
         if opt == '-a':
+            listen = optarg
+        if opt == '-c':
             authmode = optarg
 
     if authmode == 'sk1':
@@ -377,26 +376,8 @@ def main():
     srv.mount(LocalFs(root, cancreate, dotu))
     srv.serve()
 
-#'''
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         print "interrupted."
-'''
-if __name__ == "__main__":
-    import trace
-
-    # create a Trace object, telling it what to ignore, and whether to
-    # do tracing or line-counting or both.
-    tracer = trace.Trace(
-        ignoredirs=[sys.prefix, sys.exec_prefix],
-        trace=1,
-        count=1)
-
-    # run the new command using the given tracer
-    tracer.run('main()')
-    # make a report, placing output in /tmp
-    r = tracer.results()
-    r.write_results(show_missing=True, coverdir="/tmp")
-#'''
