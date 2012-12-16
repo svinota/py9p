@@ -1,6 +1,6 @@
 Name: python-module-py9p
 Version: 1.0.7
-Release: alt1
+Release: alt2
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Python
@@ -65,6 +65,10 @@ This package contains simple 9p2000 file server.
 %_man1dir/9pfs.*
 
 %changelog
+* Sun Dec 16 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.7-alt2
+- fuse9p: read/write fixed
+- fuse9p: rename support
+
 * Sun Dec 16 2012 Peter V. Saveliev <peet@altlinux.org> 1.0.7-alt1
 - pki auth fixed
 - multiple fuse9p fixes
