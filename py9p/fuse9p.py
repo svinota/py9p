@@ -212,9 +212,9 @@ class ClientFS(fuse.Fuse):
         self._interval = 1
         self._reconnect_event = threading.Event()
         self._connected_event = threading.Event()
+        self.fidcache = FidCache()
         self._reconnect(init=True)
         self.dircache = {}
-        self.fidcache = FidCache()
         self.tfidcache = FidCache(start=MIN_TFID, limit=MAX_TFID)
 
         fuse.Fuse.__init__(self, version="%prog " + fuse.__version__,
