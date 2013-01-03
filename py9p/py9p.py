@@ -1024,7 +1024,7 @@ class Server(object):
             return
 
         if req.fid.qid.type & QTDIR:
-            data = []
+            data = ""
             for x in req.ofcall.stat:
                 ndata = x.todata(req.sock.marshal)
                 if (len(data) - req.ifcall.offset) + \

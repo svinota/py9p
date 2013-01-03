@@ -22,46 +22,19 @@
 
 import py9p
 import threading
+import struct
 
 
 class Marshal(object):
     chatty = 0
+    position = 0
 
-    def _splitFmt(self, fmt):
-        "Split up a format string."
-        idx = 0
-        r = []
-        while idx < len(fmt):
-            if fmt[idx] == '[':
-                idx2 = fmt.find("]", idx)
-                name = fmt[idx + 1:idx2]
-                idx = idx2
-            else:
-                name = fmt[idx]
-            r.append(name)
-            idx += 1
-        return r
-
-    def _prep(self, fmttab):
-        "Precompute encode and decode function tables."
-        encFunc, decFunc = {}, {}
-        for n in dir(self):
-            if n[:4] == "enc":
-                encFunc[n[4:]] = self.__getattribute__(n)
-            if n[:4] == "dec":
-                decFunc[n[4:]] = self.__getattribute__(n)
-
-        self.msgEncodes, self.msgDecodes = {}, {}
-        for k, v in fmttab.items():
-            fmts = self._splitFmt(v)
-            self.msgEncodes[k] = [encFunc[fmt] for fmt in fmts]
-            self.msgDecodes[k] = [decFunc[fmt] for fmt in fmts]
-
-    def setBuf(self, str=""):
-        self.bytes = list(str)
+    def setBuf(self, s=""):
+        self.position = 0
+        self.bytes = s
 
     def getBuf(self):
-        return "".join(self.bytes)
+        return self.bytes
 
     def _checkSize(self, v, mask):
         if v != v & mask:
@@ -74,70 +47,55 @@ class Marshal(object):
 
     def encX(self, x):
         "Encode opaque data"
-        self.bytes += list(x)
+        self.bytes += x
 
     def decX(self, l):
-        if len(self.bytes) < l:
+        if len(self.bytes[self.position:]) < l:
             raise py9p.Error("buffer exhausted")
-        x = "".join(self.bytes[:l])
-        #del self.bytes[:l]
-        self.bytes[:l] = []  # significant speedup
-        return x
-
-    def encC(self, x):
-        "Encode a 1-byte character"
-        return self.encX(x)
-
-    def decC(self):
-        return self.decX(1)
+        p = self.position
+        self.position += l
+        return self.bytes[p:p + l]
 
     def enc1(self, x):
         "Encode a 1-byte integer"
-        self._checkSize(x, 0xff)
-        self.encC(chr(x))
+        self.bytes += struct.pack('B', x)
 
     def dec1(self):
-        return long(ord(self.decC()))
+        return struct.unpack('b', self.decX(1))[0]
 
     def enc2(self, x):
         "Encode a 2-byte integer"
-        self._checkSize(x, 0xffff)
-        self.enc1(x & 0xff)
-        self.enc1(x >> 8)
+        self.bytes += struct.pack('H', x)
 
     def dec2(self):
-        return self.dec1() | (self.dec1() << 8)
+        return struct.unpack('H', self.decX(2))[0]
 
     def enc4(self, x):
         "Encode a 4-byte integer"
-        self._checkSize(x, 0xffffffffL)
-        self.enc2(x & 0xffff)
-        self.enc2(x >> 16)
+        self.bytes += struct.pack('I', x)
 
     def dec4(self):
-        return self.dec2() | (self.dec2() << 16)
+        return struct.unpack('I', self.decX(4))[0]
 
     def enc8(self, x):
-        "Encode a 4-byte integer"
-        self._checkSize(x, 0xffffffffffffffffL)
-        self.enc4(x & 0xffffffffL)
-        self.enc4(x >> 32)
+        "Encode a 8-byte integer"
+        self.bytes += struct.pack('Q', x)
 
     def dec8(self):
-        return self.dec4() | (self.dec4() << 32)
+        return struct.unpack('Q', self.decX(8))[0]
 
     def encS(self, x):
         "Encode length/data strings with 2-byte length"
-        self.enc2(len(x))
-        self.encX(x)
+        self.bytes += struct.pack("H", len(x))
+        self.bytes += x
 
     def decS(self):
         return self.decX(self.dec2())
 
     def encD(self, d):
         "Encode length/data arrays with 4-byte length"
-        self.enc4(len(d))
-        self.encX(d)
+        self.bytes += struct.pack("I", len(d))
+        self.bytes += d
 
     def decD(self):
         return self.decX(self.dec4())
@@ -153,9 +111,7 @@ class Marshal9P(Marshal):
         self._lock = threading.Lock()
 
     def encQ(self, q):
-        self.enc1(q.type)
-        self.enc4(q.vers)
-        self.enc8(q.path)
+        self.bytes += struct.pack("=BIQ", q.type, q.vers, q.path)
 
     def decQ(self):
         return py9p.Qid(self.dec1(), self.dec4(), self.dec8())
@@ -165,7 +121,7 @@ class Marshal9P(Marshal):
             raise py9p.Error("Invalid message type %d" % t)
 
     def _checkResid(self):
-        if len(self.bytes):
+        if len(self.bytes) > self.position:
             raise py9p.Error("Extra information in message: %r" % self.bytes)
 
     def send(self, fd, fcall):
@@ -176,12 +132,8 @@ class Marshal9P(Marshal):
             if self.chatty:
                 print "-%d->" % fd.fileno(), py9p.cmdName[fcall.type], \
                     fcall.tag, fcall.tostr()
-            self.enc1(fcall.type)
-            self.enc2(fcall.tag)
             self.enc(fcall)
-            self.enc4(len(self.bytes) + 4)
-            self.bytes = self.bytes[-4:] + self.bytes[:-4]
-            fd.write(self.getBuf())
+            fd.write(struct.pack("I", len(self.bytes) + 4) + self.bytes)
 
     def recv(self, fd):
         "Read and decode a message"
@@ -236,6 +188,8 @@ class Marshal9P(Marshal):
                 self.enc4(x.muidnum)
 
     def enc(self, fcall):
+        self.enc1(fcall.type)
+        self.enc2(fcall.tag)
         if fcall.type in (py9p.Tversion, py9p.Rversion):
             self.enc4(fcall.msize)
             self.encS(fcall.version)
@@ -310,10 +264,8 @@ class Marshal9P(Marshal):
         if enclen:
             # feed 2 bytes of total size
             self.dec2()
-        while len(self.bytes):
+        while len(self.bytes) - self.position:
             size = self.dec2()
-            b = self.bytes
-            self.bytes = b[0:size]
 
             stat = py9p.Dir(self.dotu)
             stat.type = self.dec2()     # type
@@ -333,8 +285,6 @@ class Marshal9P(Marshal):
                 stat.gidnum = self.dec4()
                 stat.muidnum = self.dec4()
             fcall.stat.append(stat)
-            self.bytes = b[size:]
-            #self.bytes[0:size] = []
 
     def dec(self, fcall):
         if fcall.type in (py9p.Tversion, py9p.Rversion):
