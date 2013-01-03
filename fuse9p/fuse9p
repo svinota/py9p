@@ -23,6 +23,7 @@
 
 import os
 import sys
+import ast
 import getopt
 from py9p import py9p
 from py9p import fuse9p
@@ -53,7 +54,13 @@ user@server:port mountpoint
  -p port  -- TCP port to use
  -t secs  -- timeout for the socket
  -P       -- stay connected even in the case of network errors
+ -U map   -- uid map
+ -G map   -- gid map
  -v       -- print py9p version
+
+uid/gid maps format: {remote_uid: local_uid}, e.g.:
+    ... -U "{1000: 500}" -G "{1000: 500}" ...
+(on Debian, user ids start from 1000, on RH -- from 500)
     """)
 
 
@@ -79,7 +86,7 @@ timeout = 10
 keep_reconnect = False
 
 try:
-    opts, args = getopt.getopt(args, "Pdvc:k:l:p:t:")
+    opts, args = getopt.getopt(args, "PdvU:G:c:k:l:p:t:")
 except:
     paluu("usage")
 
@@ -99,6 +106,10 @@ for opt, optarg in opts:
         timeout = optarg
     elif opt == "-P":
         keep_reconnect = True
+    elif opt == "-U":
+        fuse9p.uid_map.update(ast.literal_eval(optarg))
+    elif opt == "-G":
+        fuse9p.gid_map.update(ast.literal_eval(optarg))
     elif opt == "-v":
         print("py9p version %s" % (version))
         sys.exit(0)

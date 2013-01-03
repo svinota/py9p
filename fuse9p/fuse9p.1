@@ -4,7 +4,8 @@ fuse9p \- filesystem client for 9p2000.u servers
 .SH "SYNOPSIS"
 \fBmounting\fR
 .br
-	\fBfuse9p\fR [\-dPv] [\-c mode] [\-k file] [\-l user] [\-p port] [\-t secs] [user@]\fBserver\fR[:port] \fBmountpoint\fR
+	\fBfuse9p\fR [\-dPv] [\-c mode] [\-k file] [\-l user] [\-p port] [\-t secs]
+[\-U uid_map] [\-G gid_map] [user@]\fBserver\fR[:port] \fBmountpoint\fR
 
 \fBunmounting\fR
 .br
@@ -21,6 +22,10 @@ Another difference from the kernel v9fs is a protocol optimizations that allow \
 \fB\-d\fR
 .br
 	Turn on debug and run in foreground. Please note, that in this mode you can not stop \fBfuse9p\fR with Ctrl\-C, you should use \fBfusermount \-u\fR.
+
+\fB\-G\fR gid_map
+.br
+    Turn on gid mapping (see \fBUID/GID MAPPING\fR below)
 
 \fB\-k\fR file
 .br
@@ -41,6 +46,10 @@ Another difference from the kernel v9fs is a protocol optimizations that allow \
 \fB\-t\fR secs
 .br
     Timeout (in seconds) for the 9p socket. By default it is 10 seconds.
+
+\fB\-G\fR gid_map
+.br
+    Turn on gid mapping (see \fBUID/GID MAPPING\fR below)
 
 \fB\-v\fR
 .br
@@ -79,6 +88,15 @@ or directory listing call resets the interval back to 2 seconds.
 Since the reconnection is running asynchronously, you can get empty mount
 point even if the server became reachable; if so, just repeat the directory
 listing call.
+
+.SH "UID/GID MAPPING"
+
+Often, uids/gids on the server and client side are not the same. This feature
+allows you to map server's uids/gids into client's ones in the way like this:
+
+    ... \fB\-U\fR "{1000: 500, 1001: 505}" \fB\-G\fR "{1000: 500}" ...
+
+Please note, that server's uid/gid goes first.
 
 .SH "SEE ALSO"
 \fBssh\-keygen\fR(1), \fB9pfs\fR

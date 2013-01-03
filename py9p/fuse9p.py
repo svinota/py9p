@@ -40,6 +40,8 @@ MAX_FID = 65535
 MAX_RECONNECT_INTERVAL = 1024
 IOUNIT = 1024 * 16
 
+uid_map = {}
+gid_map = {}
 rpccodes = {
         "duplicate fid": -errno.EBADFD,
         "unknown fid": -errno.EBADFD,
@@ -73,8 +75,8 @@ class fStat(fuse.Stat):
             self.st_nlink = inode.length
         else:
             self.st_nlink = 1
-        self.st_uid = inode.uidnum
-        self.st_gid = inode.gidnum
+        self.st_uid = int(uid_map.get(inode.uidnum, inode.uidnum))
+        self.st_gid = int(gid_map.get(inode.gidnum, inode.gidnum))
         self.st_size = inode.length
         self.st_atime = inode.atime
         self.st_mtime = inode.mtime
