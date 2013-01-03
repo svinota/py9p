@@ -77,6 +77,15 @@ Links
 Changes
 =======
 
+1.0.8 -- Neoarchean
+-------------------
+
+ * fuse9p: fid cache fixed
+ * fuse9p: several thread safety issues fixed
+ * fuse9p: iounit negotiation
+ * fuse9p: support rename() routine
+ * fuse9p: uid/gid map feature
+
 1.0.7 -- Mesoarchean
 --------------------
 

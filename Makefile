@@ -20,7 +20,7 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 version ?= "1.0"
-release ?= "1.0.7"
+release ?= "1.0.8"
 python ?= "python"
 
 ifdef root
