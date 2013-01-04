@@ -111,7 +111,8 @@ def guard(c):
         tfid = None
         try:
             tfid = self.tfidcache.acquire()
-            ret = c(self, tfid.fid, *argv, **kwarg)
+            with self._rlock:
+                ret = c(self, tfid.fid, *argv, **kwarg)
         except NoFidError:
             ret = -errno.EMFILE
         except py9p.RpcError as e:
@@ -451,31 +452,29 @@ class ClientFS(fuse.Fuse):
     def write(self, tfid, path, buf, offset, f):
         if py9p.hash8(path) in self.dircache:
             del self.dircache[py9p.hash8(path)]
-        with self._wlock:
-            size = len(buf)
-            for i in range((size + f.iounit - 1) / f.iounit):
-                start = i * f.iounit
-                length = start + f.iounit
-                self.client._write(f.fid, offset + start,
-                        buf[start:length])
-            return size
+        size = len(buf)
+        for i in range((size + f.iounit - 1) / f.iounit):
+            start = i * f.iounit
+            length = start + f.iounit
+            self.client._write(f.fid, offset + start,
+                    buf[start:length])
+        return size
 
     @guard
     def read(self, tfid, path, size, offset, f):
-        with self._rlock:
-            data = bytes()
-            i = 0
-            while True:
-                # we do not rely nor on msize, neither on iounit,
-                # so, shift offset only with real data read
-                ret = self.client._read(f.fid, offset,
-                        min(size - len(data), f.iounit))
-                data += ret.data
-                offset += len(ret.data)
-                if size <= len(data) or len(ret.data) == 0:
-                    break
-                i += 1
-            return data[:size]
+        data = bytes()
+        i = 0
+        while True:
+            # we do not rely nor on msize, neither on iounit,
+            # so, shift offset only with real data read
+            ret = self.client._read(f.fid, offset,
+                    min(size - len(data), f.iounit))
+            data += ret.data
+            offset += len(ret.data)
+            if size <= len(data) or len(ret.data) == 0:
+                break
+            i += 1
+        return data[:size]
 
     @guard
     def rename(self, tfid, path, dest):
