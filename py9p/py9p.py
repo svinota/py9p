@@ -419,6 +419,7 @@ class Dir(object):
 
     def __init__(self, dotu=0, *args, **kwargs):
         self.dotu = dotu
+        self.statsz = 0
         # the dotu arguments will be added separately. this is not
         # straightforward but is cleaner.
         if len(args):

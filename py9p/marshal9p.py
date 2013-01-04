@@ -158,34 +158,29 @@ class Marshal9P(Marshal):
         if enclen:
             for x in fcall.stat:
                 if self.dotu:
-                    statsz = 2 + 4 + 13 + 4 + 4 + 4 + 8 + \
+                    x.statsz = 63 + \
                             len(x.name) + len(x.uid) + len(x.gid) + \
-                            len(x.muid) + 2 + 2 + 2 + 2 + \
-                            len(x.extension) + 2 + 4 + 4 + 4
+                            len(x.muid) + len(x.extension)
+                    statsz += x.statsz
                 else:
-                    statsz = 2 + 4 + 13 + 4 + 4 + 4 + 8 + \
+                    x.statsz = 49 + \
                             len(x.name) + len(x.uid) + len(x.gid) + \
-                            len(x.muid) + 2 + 2 + 2 + 2
+                            len(x.muid)
+                    statsz += x.statsz
             self.enc2(statsz + 2)
 
         for x in fcall.stat:
-            self.enc2(statsz)
-            self.enc2(x.type)
-            self.enc4(x.dev)
-            self.encQ(x.qid)
-            self.enc4(x.mode)
-            self.enc4(x.atime)
-            self.enc4(x.mtime)
-            self.enc8(x.length)
+            self.bytes += struct.pack("=HHIBIQIIIQ",
+                    x.statsz, x.type, x.dev, x.qid.type, x.qid.vers,
+                    x.qid.path, x.mode, x.atime, x.mtime, x.length)
             self.encS(x.name)
             self.encS(x.uid)
             self.encS(x.gid)
             self.encS(x.muid)
             if self.dotu:
                 self.encS(x.extension)
-                self.enc4(x.uidnum)
-                self.enc4(x.gidnum)
-                self.enc4(x.muidnum)
+                self.bytes += struct.pack("=III",
+                        x.uidnum, x.gidnum, x.muidnum)
 
     def enc(self, fcall):
         self.enc1(fcall.type)
@@ -265,25 +260,28 @@ class Marshal9P(Marshal):
             # feed 2 bytes of total size
             self.dec2()
         while len(self.bytes) - self.position:
-            size = self.dec2()
+            self.dec2()
 
             stat = py9p.Dir(self.dotu)
-            stat.type = self.dec2()     # type
-            stat.dev = self.dec4()      # dev
-            stat.qid = self.decQ()      # qid
-            stat.mode = self.dec4()     # mode
-            stat.atime = self.dec4()    # atime
-            stat.mtime = self.dec4()    # mtime
-            stat.length = self.dec8()   # length
+            (stat.type,
+                    stat.dev,
+                    typ, vers, path,
+                    stat.mode,
+                    stat.atime,
+                    stat.mtime,
+                    stat.length) = struct.unpack(
+                            "=HIBIQIIIQ", self.decX(39))
+            stat.qid = py9p.Qid(typ, vers, path)
             stat.name = self.decS()     # name
             stat.uid = self.decS()      # uid
             stat.gid = self.decS()      # gid
             stat.muid = self.decS()     # muid
             if self.dotu:
                 stat.extension = self.decS()
-                stat.uidnum = self.dec4()
-                stat.gidnum = self.dec4()
-                stat.muidnum = self.dec4()
+                (stat.uidnum,
+                        stat.gidnum,
+                        stat.muidnum) = struct.unpack(
+                                "=III", self.decX(12))
             fcall.stat.append(stat)
 
     def dec(self, fcall):
