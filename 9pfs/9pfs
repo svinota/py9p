@@ -166,21 +166,23 @@ class LocalFs(object):
                 req.ofcall.wqid.append(qid)
                 f = f.parent
             else:
-                d = self.pathtodir(npath)
+                try:
+                    d = self.pathtodir(npath)
+                except:
+                    srv.respond(req, "file not found")
+                    return
+
                 nf = self.getfile(d.qid.path)
                 if nf:
                     # already exists, just append to req
                     req.ofcall.wqid.append(d.qid)
                     f = nf
-                elif os.path.exists(npath):
+                else:
                     d.localpath = npath
                     d.parent = f
                     self.files[d.qid.path] = d
                     req.ofcall.wqid.append(d.qid)
                     f = d
-                else:
-                    srv.respond(req, "can't find %s" % path)
-                    return
 
         req.ofcall.nwqid = len(req.ofcall.wqid)
         srv.respond(req, None)
