@@ -20,21 +20,99 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import io
 import py9p
 import threading
 import struct
 
 
-class Marshal(object):
-    chatty = 0
-    position = 0
+class Buffer(io.BytesIO):
 
-    def setBuf(self, s=""):
-        self.position = 0
-        self.bytes = s
+    @property
+    def length(self):
+        p = self.tell()
+        self.seek(0, 2)
+        l = self.tell()
+        self.seek(p)
+        return l
 
-    def getBuf(self):
-        return self.bytes
+    def enc1(self, x):
+        """Encode 1-byte unsigned"""
+        self.write(struct.pack('B', x))
+
+    def dec1(self):
+        """Decode 1-byte unsigned"""
+        return struct.unpack('b', self.read(1))[0]
+
+    def enc2(self, x):
+        """Encode 2-byte unsigned"""
+        self.write(struct.pack('H', x))
+
+    def dec2(self):
+        """Decode 2-byte unsigned"""
+        return struct.unpack('H', self.read(2))[0]
+
+    def enc4(self, x):
+        """Encode 4-byte unsigned"""
+        self.write(struct.pack('I', x))
+
+    def dec4(self):
+        """Decode 4-byte unsigned"""
+        return struct.unpack('I', self.read(4))[0]
+
+    def enc8(self, x):
+        """Encode 8-byte unsigned"""
+        self.write(struct.pack('Q', x))
+
+    def dec8(self):
+        """Decode 8-byte unsigned"""
+        return struct.unpack('Q', self.read(8))[0]
+
+    def encS(self, x):
+        """Encode data string with 2-byte length"""
+        self.write(struct.pack("H", len(x)))
+        self.write(x)
+
+    def decS(self):
+        """Decode data string with 2-byte length"""
+        return self.read(self.dec2())
+
+    def encD(self, d):
+        """Encode data string with 4-byte length"""
+        self.write(struct.pack("I", len(d)))
+        self.write(d)
+
+    def decD(self):
+        """Decode data string with 4-byte length"""
+        return self.read(self.dec4())
+
+    def encF(self, *argv):
+        """Encode data directly by struct.pack"""
+        self.write(struct.pack(*argv))
+
+    def decF(self, fmt, length):
+        """Decode data by struct.unpack"""
+        return struct.unpack(fmt, self.read(length))
+
+
+class Marshal9P(object):
+    chatty = False
+
+    def __init__(self, dotu=0, chatty=False):
+        self.chatty = chatty
+        self.dotu = dotu
+        self._lock = threading.Lock()
+        self.buf = Buffer()
+
+    def encQ(self, q):
+        self.buf.encF("=BIQ", q.type, q.vers, q.path)
+
+    def decQ(self):
+        return py9p.Qid(self.buf.dec1(), self.buf.dec4(), self.buf.dec8())
+
+    def _checkType(self, t):
+        if t not in py9p.cmdName:
+            raise py9p.Error("Invalid message type %d" % t)
 
     def _checkSize(self, v, mask):
         if v != v & mask:
@@ -45,222 +123,145 @@ class Marshal(object):
             raise py9p.Error("Wrong length %d, expected %d: %r" % (
                 len(x), l, x))
 
-    def encX(self, x):
-        "Encode opaque data"
-        self.bytes += x
-
-    def decX(self, l):
-        if len(self.bytes[self.position:]) < l:
-            raise py9p.Error("buffer exhausted")
-        p = self.position
-        self.position += l
-        return self.bytes[p:p + l]
-
-    def enc1(self, x):
-        "Encode a 1-byte integer"
-        self.bytes += struct.pack('B', x)
-
-    def dec1(self):
-        return struct.unpack('b', self.decX(1))[0]
-
-    def enc2(self, x):
-        "Encode a 2-byte integer"
-        self.bytes += struct.pack('H', x)
-
-    def dec2(self):
-        return struct.unpack('H', self.decX(2))[0]
-
-    def enc4(self, x):
-        "Encode a 4-byte integer"
-        self.bytes += struct.pack('I', x)
-
-    def dec4(self):
-        return struct.unpack('I', self.decX(4))[0]
-
-    def enc8(self, x):
-        "Encode a 8-byte integer"
-        self.bytes += struct.pack('Q', x)
-
-    def dec8(self):
-        return struct.unpack('Q', self.decX(8))[0]
-
-    def encS(self, x):
-        "Encode length/data strings with 2-byte length"
-        self.bytes += struct.pack("H", len(x))
-        self.bytes += x
-
-    def decS(self):
-        return self.decX(self.dec2())
-
-    def encD(self, d):
-        "Encode length/data arrays with 4-byte length"
-        self.bytes += struct.pack("I", len(d))
-        self.bytes += d
-
-    def decD(self):
-        return self.decX(self.dec4())
-
-
-class Marshal9P(Marshal):
-    MAXSIZE = 1024 * 1024            # XXX
-    chatty = False
-
-    def __init__(self, dotu=0, chatty=False):
-        self.chatty = chatty
-        self.dotu = dotu
-        self._lock = threading.Lock()
-
-    def encQ(self, q):
-        self.bytes += struct.pack("=BIQ", q.type, q.vers, q.path)
-
-    def decQ(self):
-        return py9p.Qid(self.dec1(), self.dec4(), self.dec8())
-
-    def _checkType(self, t):
-        if t not in py9p.cmdName:
-            raise py9p.Error("Invalid message type %d" % t)
-
-    def _checkResid(self):
-        if len(self.bytes) > self.position:
-            raise py9p.Error("Extra information in message: %r" % self.bytes)
+    def setBuffer(self, init=None):
+        self.buf.seek(0)
+        self.buf.truncate()
+        if init is not None:
+            self.buf.write(init)
+            self.buf.seek(0)
 
     def send(self, fd, fcall):
         "Format and send a message"
         with self._lock:
-            self.setBuf()
+            self.setBuffer("0000")
+            self.buf.seek(4)
             self._checkType(fcall.type)
             if self.chatty:
                 print "-%d->" % fd.fileno(), py9p.cmdName[fcall.type], \
                     fcall.tag, fcall.tostr()
             self.enc(fcall)
-            fd.write(struct.pack("I", len(self.bytes) + 4) + self.bytes)
+            self.buf.seek(0)
+            self.buf.enc4(self.buf.length)
+            fd.write(self.buf.getvalue())
 
     def recv(self, fd):
         "Read and decode a message"
         with self._lock:
-            self.setBuf(fd.read(4))
-            size = self.dec4()
-            if size > self.MAXSIZE or size < 4:
+            self.setBuffer(fd.read(4))
+            size = self.buf.dec4()
+            if size > 0xffffffff or size < 7:
                 raise py9p.Error("Bad message size: %d" % size)
-            self.setBuf(fd.read(size - 4))
-            type, tag = self.dec1(), self.dec2()
+            self.setBuffer(fd.read(size - 4))
+            type, tag = self.buf.decF("=BH", 3)
             self._checkType(type)
             fcall = py9p.Fcall(type, tag)
             self.dec(fcall)
-            self._checkResid()
+            # self._checkResid() -- FIXME
             if self.chatty:
                 print "<-%d- %s %s %s" % (fd.fileno(), py9p.cmdName[type],
                         tag, fcall.tostr())
             return fcall
 
-    def encstat(self, fcall, enclen=1):
+    def encstat(self, stats, enclen=1):
         statsz = 0
+        for x in stats:
+            if self.dotu:
+                x.statsz = 61 + \
+                        len(x.name) + len(x.uid) + len(x.gid) + \
+                        len(x.muid) + len(x.extension)
+                statsz += x.statsz
+            else:
+                x.statsz = 47 + \
+                        len(x.name) + len(x.uid) + len(x.gid) + \
+                        len(x.muid)
+                statsz += x.statsz
         if enclen:
-            for x in fcall.stat:
-                if self.dotu:
-                    x.statsz = 63 + \
-                            len(x.name) + len(x.uid) + len(x.gid) + \
-                            len(x.muid) + len(x.extension)
-                    statsz += x.statsz
-                else:
-                    x.statsz = 49 + \
-                            len(x.name) + len(x.uid) + len(x.gid) + \
-                            len(x.muid)
-                    statsz += x.statsz
-            self.enc2(statsz + 2)
+            self.buf.enc2(statsz + 2)
 
-        for x in fcall.stat:
-            self.bytes += struct.pack("=HHIBIQIIIQ",
+        for x in stats:
+            self.buf.encF("=HHIBIQIIIQ",
                     x.statsz, x.type, x.dev, x.qid.type, x.qid.vers,
                     x.qid.path, x.mode, x.atime, x.mtime, x.length)
-            self.encS(x.name)
-            self.encS(x.uid)
-            self.encS(x.gid)
-            self.encS(x.muid)
+            self.buf.encS(x.name)
+            self.buf.encS(x.uid)
+            self.buf.encS(x.gid)
+            self.buf.encS(x.muid)
             if self.dotu:
-                self.encS(x.extension)
-                self.bytes += struct.pack("=III",
+                self.buf.encS(x.extension)
+                self.buf.encF("=III",
                         x.uidnum, x.gidnum, x.muidnum)
 
     def enc(self, fcall):
-        self.enc1(fcall.type)
-        self.enc2(fcall.tag)
+        self.buf.encF("=BH", fcall.type, fcall.tag)
         if fcall.type in (py9p.Tversion, py9p.Rversion):
-            self.enc4(fcall.msize)
-            self.encS(fcall.version)
+            self.buf.encF("I", fcall.msize)
+            self.buf.encS(fcall.version)
         elif fcall.type == py9p.Tauth:
-            self.enc4(fcall.afid)
-            self.encS(fcall.uname)
-            self.encS(fcall.aname)
+            self.buf.encF("I", fcall.afid)
+            self.buf.encS(fcall.uname)
+            self.buf.encS(fcall.aname)
             if self.dotu:
-                self.enc4(fcall.uidnum)
+                self.buf.encF("I", fcall.uidnum)
         elif fcall.type == py9p.Rauth:
             self.encQ(fcall.aqid)
         elif fcall.type == py9p.Rerror:
-            self.encS(fcall.ename)
+            self.buf.encS(fcall.ename)
             if self.dotu:
-                self.enc4(fcall.errno)
+                self.buf.encF("I", fcall.errno)
         elif fcall.type == py9p.Tflush:
-            self.enc2(fcall.oldtag)
+            self.buf.encF("H", fcall.oldtag)
         elif fcall.type == py9p.Tattach:
-            self.enc4(fcall.fid)
-            self.enc4(fcall.afid)
-            self.encS(fcall.uname)
-            self.encS(fcall.aname)
+            self.buf.encF("=II", fcall.fid, fcall.afid)
+            self.buf.encS(fcall.uname)
+            self.buf.encS(fcall.aname)
             if self.dotu:
-                self.enc4(fcall.uidnum)
+                self.buf.encF("I", fcall.uidnum)
         elif fcall.type == py9p.Rattach:
             self.encQ(fcall.qid)
         elif fcall.type == py9p.Twalk:
-            self.enc4(fcall.fid)
-            self.enc4(fcall.newfid)
-            self.enc2(len(fcall.wname))
+            self.buf.encF("=IIH", fcall.fid, fcall.newfid,
+                    len(fcall.wname))
             for x in fcall.wname:
-                self.encS(x)
+                self.buf.encS(x)
         elif fcall.type == py9p.Rwalk:
-            self.enc2(len(fcall.wqid))
+            self.buf.encF("H", len(fcall.wqid))
             for x in fcall.wqid:
                 self.encQ(x)
         elif fcall.type == py9p.Topen:
-            self.enc4(fcall.fid)
-            self.enc1(fcall.mode)
+            self.buf.encF("=IB", fcall.fid, fcall.mode)
         elif fcall.type in (py9p.Ropen, py9p.Rcreate):
             self.encQ(fcall.qid)
-            self.enc4(fcall.iounit)
+            self.buf.encF("I", fcall.iounit)
         elif fcall.type == py9p.Tcreate:
-            self.enc4(fcall.fid)
-            self.encS(fcall.name)
-            self.enc4(fcall.perm)
-            self.enc1(fcall.mode)
+            self.buf.encF("I", fcall.fid)
+            self.buf.encS(fcall.name)
+            self.buf.encF("=IB", fcall.perm, fcall.mode)
             if self.dotu:
-                self.encS(fcall.extension)
+                self.buf.encS(fcall.extension)
         elif fcall.type == py9p.Tread:
-            self.enc4(fcall.fid)
-            self.enc8(fcall.offset)
-            self.enc4(fcall.count)
+            self.buf.encF("=IQI", fcall.fid, fcall.offset,
+                    fcall.count)
         elif fcall.type == py9p.Rread:
-            self.encD(fcall.data)
+            self.buf.encD(fcall.data)
         elif fcall.type == py9p.Twrite:
-            self.enc4(fcall.fid)
-            self.enc8(fcall.offset)
-            self.enc4(len(fcall.data))
-            self.encX(fcall.data)
+            self.buf.encF("=IQI", fcall.fid, fcall.offset,
+                    len(fcall.data))
+            self.buf.encX(fcall.data)
         elif fcall.type == py9p.Rwrite:
-            self.enc4(fcall.count)
+            self.buf.encF("I", fcall.count)
         elif fcall.type in (py9p.Tclunk,  py9p.Tremove, py9p.Tstat):
-            self.enc4(fcall.fid)
+            self.buf.encF("I", fcall.fid)
         elif fcall.type in (py9p.Rstat, py9p.Twstat):
             if fcall.type == py9p.Twstat:
-                self.enc4(fcall.fid)
-            self.encstat(fcall, 1)
+                self.buf.encF("I", fcall.fid)
+            self.encstat(fcall.stat, 1)
 
-    def decstat(self, fcall, enclen=0):
-        fcall.stat = []
+    def decstat(self, stats, enclen=0):
         if enclen:
             # feed 2 bytes of total size
-            self.dec2()
-        while len(self.bytes) - self.position:
-            self.dec2()
+            self.buf.read(2)
+        while self.buf.tell() < self.buf.length:
+            self.buf.read(2)
 
             stat = py9p.Dir(self.dotu)
             (stat.type,
@@ -269,87 +270,85 @@ class Marshal9P(Marshal):
                     stat.mode,
                     stat.atime,
                     stat.mtime,
-                    stat.length) = struct.unpack(
-                            "=HIBIQIIIQ", self.decX(39))
+                    stat.length) = self.buf.decF("=HIBIQIIIQ", 39)
             stat.qid = py9p.Qid(typ, vers, path)
-            stat.name = self.decS()     # name
-            stat.uid = self.decS()      # uid
-            stat.gid = self.decS()      # gid
-            stat.muid = self.decS()     # muid
+            stat.name = self.buf.decS()     # name
+            stat.uid = self.buf.decS()      # uid
+            stat.gid = self.buf.decS()      # gid
+            stat.muid = self.buf.decS()     # muid
             if self.dotu:
-                stat.extension = self.decS()
+                stat.extension = self.buf.decS()
                 (stat.uidnum,
                         stat.gidnum,
-                        stat.muidnum) = struct.unpack(
-                                "=III", self.decX(12))
-            fcall.stat.append(stat)
+                        stat.muidnum) = self.buf.decF("=III", 12)
+            stats.append(stat)
 
     def dec(self, fcall):
         if fcall.type in (py9p.Tversion, py9p.Rversion):
-            fcall.msize = self.dec4()
-            fcall.version = self.decS()
+            fcall.msize = self.buf.dec4()
+            fcall.version = self.buf.decS()
         elif fcall.type == py9p.Tauth:
-            fcall.afid = self.dec4()
-            fcall.uname = self.decS()
-            fcall.aname = self.decS()
+            fcall.afid = self.buf.dec4()
+            fcall.uname = self.buf.decS()
+            fcall.aname = self.buf.decS()
             if self.dotu:
-                fcall.uidnum = self.dec4()
+                fcall.uidnum = self.buf.dec4()
         elif fcall.type == py9p.Rauth:
             fcall.aqid = self.decQ()
         elif fcall.type == py9p.Rerror:
-            fcall.ename = self.decS()
+            fcall.ename = self.buf.decS()
             if self.dotu:
-                fcall.errno = self.dec4()
+                fcall.errno = self.buf.dec4()
         elif fcall.type == py9p.Tflush:
-            fcall.oldtag = self.dec2()
+            fcall.oldtag = self.buf.dec2()
         elif fcall.type == py9p.Tattach:
-            fcall.fid = self.dec4()
-            fcall.afid = self.dec4()
-            fcall.uname = self.decS()
-            fcall.aname = self.decS()
+            fcall.fid = self.buf.dec4()
+            fcall.afid = self.buf.dec4()
+            fcall.uname = self.buf.decS()
+            fcall.aname = self.buf.decS()
             if self.dotu:
-                fcall.uidnum = self.dec4()
+                fcall.uidnum = self.buf.dec4()
         elif fcall.type == py9p.Rattach:
             fcall.qid = self.decQ()
         elif fcall.type == py9p.Twalk:
-            fcall.fid = self.dec4()
-            fcall.newfid = self.dec4()
-            fcall.nwname = self.dec2()
-            fcall.wname = [self.decS() for n in xrange(fcall.nwname)]
+            fcall.fid = self.buf.dec4()
+            fcall.newfid = self.buf.dec4()
+            fcall.nwname = self.buf.dec2()
+            fcall.wname = [self.buf.decS() for n in xrange(fcall.nwname)]
         elif fcall.type == py9p.Rwalk:
-            fcall.nwqid = self.dec2()
+            fcall.nwqid = self.buf.dec2()
             fcall.wqid = [self.decQ() for n in xrange(fcall.nwqid)]
         elif fcall.type == py9p.Topen:
-            fcall.fid = self.dec4()
-            fcall.mode = self.dec1()
+            fcall.fid = self.buf.dec4()
+            fcall.mode = self.buf.dec1()
         elif fcall.type in (py9p.Ropen, py9p.Rcreate):
             fcall.qid = self.decQ()
-            fcall.iounit = self.dec4()
+            fcall.iounit = self.buf.dec4()
         elif fcall.type == py9p.Tcreate:
-            fcall.fid = self.dec4()
-            fcall.name = self.decS()
-            fcall.perm = self.dec4()
-            fcall.mode = self.dec1()
+            fcall.fid = self.buf.dec4()
+            fcall.name = self.buf.decS()
+            fcall.perm = self.buf.dec4()
+            fcall.mode = self.buf.dec1()
             if self.dotu:
-                fcall.extension = self.decS()
+                fcall.extension = self.buf.decS()
         elif fcall.type == py9p.Tread:
-            fcall.fid = self.dec4()
-            fcall.offset = self.dec8()
-            fcall.count = self.dec4()
+            fcall.fid = self.buf.dec4()
+            fcall.offset = self.buf.dec8()
+            fcall.count = self.buf.dec4()
         elif fcall.type == py9p.Rread:
-            fcall.data = self.decD()
+            fcall.data = self.buf.decD()
         elif fcall.type == py9p.Twrite:
-            fcall.fid = self.dec4()
-            fcall.offset = self.dec8()
-            fcall.count = self.dec4()
-            fcall.data = self.decX(fcall.count)
+            fcall.fid = self.buf.dec4()
+            fcall.offset = self.buf.dec8()
+            fcall.count = self.buf.dec4()
+            fcall.data = self.buf.decX(fcall.count)
         elif fcall.type == py9p.Rwrite:
-            fcall.count = self.dec4()
+            fcall.count = self.buf.dec4()
         elif fcall.type in (py9p.Tclunk, py9p.Tremove, py9p.Tstat):
-            fcall.fid = self.dec4()
+            fcall.fid = self.buf.dec4()
         elif fcall.type in (py9p.Rstat, py9p.Twstat):
             if fcall.type == py9p.Twstat:
-                fcall.fid = self.dec4()
-            self.decstat(fcall, 1)
+                fcall.fid = self.buf.dec4()
+            self.decstat(fcall.stat, 1)
 
         return fcall

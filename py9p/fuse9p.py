@@ -588,9 +588,9 @@ class ClientFS(fuse.Fuse):
                 break
             offset += len(ret.data)
             p9 = marshal9p.Marshal9P(dotu=self.dotu)
-            p9.setBuf(ret.data)
+            p9.setBuffer(ret.data)
             fcall = py9p.Fcall(py9p.Rstat)
-            p9.decstat(fcall, 0)
+            p9.decstat(fcall.stat, 0)
             dirs.extend(fcall.stat)
         self.client._clunk(tfid)
         return dirs
