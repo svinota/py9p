@@ -246,7 +246,7 @@ class Marshal9P(object):
         elif fcall.type == py9p.Twrite:
             self.buf.encF("=IQI", fcall.fid, fcall.offset,
                     len(fcall.data))
-            self.buf.encX(fcall.data)
+            self.buf.write(fcall.data)
         elif fcall.type == py9p.Rwrite:
             self.buf.encF("I", fcall.count)
         elif fcall.type in (py9p.Tclunk,  py9p.Tremove, py9p.Tstat):
@@ -341,7 +341,7 @@ class Marshal9P(object):
             fcall.fid = self.buf.dec4()
             fcall.offset = self.buf.dec8()
             fcall.count = self.buf.dec4()
-            fcall.data = self.buf.decX(fcall.count)
+            fcall.data = self.buf.read(fcall.count)
         elif fcall.type == py9p.Rwrite:
             fcall.count = self.buf.dec4()
         elif fcall.type in (py9p.Tclunk, py9p.Tremove, py9p.Tstat):
