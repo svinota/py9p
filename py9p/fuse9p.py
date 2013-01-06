@@ -588,6 +588,7 @@ class ClientFS(fuse.Fuse):
             offset += len(ret.data)
             p9 = marshal9p.Marshal9P(dotu=self.dotu)
             p9.setBuffer(ret.data)
+            p9.buf.seek(0)
             fcall = py9p.Fcall(py9p.Rstat)
             p9.decstat(fcall.stat, 0)
             dirs.extend(fcall.stat)

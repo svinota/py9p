@@ -125,18 +125,15 @@ class Marshal9P(object):
             raise py9p.Error("Wrong length %d, expected %d: %r" % (
                 len(x), l, x))
 
-    def setBuffer(self, init=None):
+    def setBuffer(self, init=""):
         self.buf.seek(0)
         self.buf.truncate()
-        if init is not None:
-            self.buf.write(init)
-            self.buf.seek(0)
+        self.buf.write(init)
 
     def send(self, fd, fcall):
         "Format and send a message"
         with self._lock:
             self.setBuffer("0000")
-            self.buf.seek(4)
             self._checkType(fcall.type)
             if self.chatty:
                 print "-%d->" % fd.fileno(), py9p.cmdName[fcall.type], \
@@ -149,11 +146,11 @@ class Marshal9P(object):
     def recv(self, fd):
         "Read and decode a message"
         with self._lock:
-            self.setBuffer(fd.read(4))
-            size = self.buf.dec4()
+            size = struct.unpack("I", fd.read(4))[0]
             if size > 0xffffffff or size < 7:
                 raise py9p.Error("Bad message size: %d" % size)
             self.setBuffer(fd.read(size - 4))
+            self.buf.seek(0)
             type, tag = self.buf.decF("=BH", 3)
             self._checkType(type)
             fcall = py9p.Fcall(type, tag)
