@@ -94,6 +94,14 @@ class Buffer(io.BytesIO):
         """Decode data by struct.unpack"""
         return struct.unpack(fmt, self.read(length))
 
+    def encQ(self, q):
+        """Encode Qid structure"""
+        self.encF("=BIQ", q.type, q.vers, q.path)
+
+    def decQ(self):
+        """Decode Qid structure"""
+        return py9p.Qid(self.dec1(), self.dec4(), self.dec8())
+
 
 class Marshal9P(object):
     chatty = False
@@ -103,12 +111,6 @@ class Marshal9P(object):
         self.dotu = dotu
         self._lock = threading.Lock()
         self.buf = Buffer()
-
-    def encQ(self, q):
-        self.buf.encF("=BIQ", q.type, q.vers, q.path)
-
-    def decQ(self):
-        return py9p.Qid(self.buf.dec1(), self.buf.dec4(), self.buf.dec8())
 
     def _checkType(self, t):
         if t not in py9p.cmdName:
@@ -203,7 +205,7 @@ class Marshal9P(object):
             if self.dotu:
                 self.buf.encF("I", fcall.uidnum)
         elif fcall.type == py9p.Rauth:
-            self.encQ(fcall.aqid)
+            self.buf.encQ(fcall.aqid)
         elif fcall.type == py9p.Rerror:
             self.buf.encS(fcall.ename)
             if self.dotu:
@@ -217,7 +219,7 @@ class Marshal9P(object):
             if self.dotu:
                 self.buf.encF("I", fcall.uidnum)
         elif fcall.type == py9p.Rattach:
-            self.encQ(fcall.qid)
+            self.buf.encQ(fcall.qid)
         elif fcall.type == py9p.Twalk:
             self.buf.encF("=IIH", fcall.fid, fcall.newfid,
                     len(fcall.wname))
@@ -226,11 +228,11 @@ class Marshal9P(object):
         elif fcall.type == py9p.Rwalk:
             self.buf.encF("H", len(fcall.wqid))
             for x in fcall.wqid:
-                self.encQ(x)
+                self.buf.encQ(x)
         elif fcall.type == py9p.Topen:
             self.buf.encF("=IB", fcall.fid, fcall.mode)
         elif fcall.type in (py9p.Ropen, py9p.Rcreate):
-            self.encQ(fcall.qid)
+            self.buf.encQ(fcall.qid)
             self.buf.encF("I", fcall.iounit)
         elif fcall.type == py9p.Tcreate:
             self.buf.encF("I", fcall.fid)
@@ -294,7 +296,7 @@ class Marshal9P(object):
             if self.dotu:
                 fcall.uidnum = self.buf.dec4()
         elif fcall.type == py9p.Rauth:
-            fcall.aqid = self.decQ()
+            fcall.aqid = self.buf.decQ()
         elif fcall.type == py9p.Rerror:
             fcall.ename = self.buf.decS()
             if self.dotu:
@@ -309,7 +311,7 @@ class Marshal9P(object):
             if self.dotu:
                 fcall.uidnum = self.buf.dec4()
         elif fcall.type == py9p.Rattach:
-            fcall.qid = self.decQ()
+            fcall.qid = self.buf.decQ()
         elif fcall.type == py9p.Twalk:
             fcall.fid = self.buf.dec4()
             fcall.newfid = self.buf.dec4()
@@ -317,12 +319,12 @@ class Marshal9P(object):
             fcall.wname = [self.buf.decS() for n in xrange(fcall.nwname)]
         elif fcall.type == py9p.Rwalk:
             fcall.nwqid = self.buf.dec2()
-            fcall.wqid = [self.decQ() for n in xrange(fcall.nwqid)]
+            fcall.wqid = [self.buf.decQ() for n in xrange(fcall.nwqid)]
         elif fcall.type == py9p.Topen:
             fcall.fid = self.buf.dec4()
             fcall.mode = self.buf.dec1()
         elif fcall.type in (py9p.Ropen, py9p.Rcreate):
-            fcall.qid = self.decQ()
+            fcall.qid = self.buf.decQ()
             fcall.iounit = self.buf.dec4()
         elif fcall.type == py9p.Tcreate:
             fcall.fid = self.buf.dec4()
