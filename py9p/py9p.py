@@ -356,6 +356,7 @@ class Fcall(object):
         self.type = type
         self.fid = fid
         self.tag = tag
+        self.stat = []
 
     def tostr(self):
         attr = [x for x in dir(self) if not x.startswith('_') and
@@ -419,6 +420,7 @@ class Dir(object):
 
     def __init__(self, dotu=0, *args, **kwargs):
         self.dotu = dotu
+        self.statsz = 0
         # the dotu arguments will be added separately. this is not
         # straightforward but is cleaner.
         if len(args):
@@ -463,38 +465,9 @@ class Dir(object):
                     self.length, dirname + self.name)
 
     def todata(self, marsh):
-        '''This circumvents a leftower from the original 9P python
-        implementation. Why do enc functions have to hide data in "bytes"?
-        I don't know'''
-
-        marsh.setBuf()
-        if marsh.dotu:
-            size = 2 + 4 + 13 + 4 + 4 + 4 + 8 + \
-                    len(self.name) + len(self.uid) + len(self.gid) +\
-                    len(self.muid) + 2 + 2 + 2 + 2 + \
-                    len(self.extension) + 2 + 4 + 4 + 4
-        else:
-            size = 2 + 4 + 13 + 4 + 4 + 4 + 8 + \
-                    len(self.name) + len(self.uid) + len(self.gid) + \
-                    len(self.muid) + 2 + 2 + 2 + 2
-        marsh.enc2(size)
-        marsh.enc2(self.type)
-        marsh.enc4(self.dev)
-        marsh.encQ(self.qid)
-        marsh.enc4(self.mode)
-        marsh.enc4(self.atime)
-        marsh.enc4(self.mtime)
-        marsh.enc8(self.length)
-        marsh.encS(self.name)
-        marsh.encS(self.uid)
-        marsh.encS(self.gid)
-        marsh.encS(self.muid)
-        if marsh.dotu:
-            marsh.encS(self.extension)
-            marsh.enc4(self.uidnum)
-            marsh.enc4(self.gidnum)
-            marsh.enc4(self.muidnum)
-        return marsh.bytes
+        marsh.setBuffer()
+        marsh.encstat((self, ), 0)
+        return marsh.buf.getvalue()
 
 
 class Req(object):
@@ -1024,7 +997,7 @@ class Server(object):
             return
 
         if req.fid.qid.type & QTDIR:
-            data = []
+            data = ""
             for x in req.ofcall.stat:
                 ndata = x.todata(req.sock.marshal)
                 if (len(data) - req.ifcall.offset) + \
@@ -1405,7 +1378,7 @@ class Client(object):
             p9.setBuf(buf)
             fcall = Fcall(Rstat)
             try:
-                p9.decstat(fcall, 0)
+                p9.decstat(fcall.stat, 0)
             except:
                 self.close()
                 print >>sys.stderr, 'unexpected decstat error:', \
