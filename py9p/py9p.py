@@ -1375,7 +1375,7 @@ class Client(object):
             if len(buf) == 0:
                 break
             p9 = marshal9p.Marshal9P()
-            p9.setBuf(buf)
+            p9.setBuffer(buf)
             fcall = Fcall(Rstat)
             try:
                 p9.decstat(fcall.stat, 0)
