@@ -7,9 +7,9 @@ import py9p
 
 try:
     assert py9p.version > "1.0.6"
+    ng = py9p.version
     from py9p import py9p
     assert hasattr(py9p, "Credentials")
-    ng = True
 except:
     ng = False
 
@@ -33,9 +33,15 @@ if __name__ == "__main__":
         sys.exit(255)
 
     if ng:
+        print "testing py9p.ng version %s" % (ng)
         cl = CmdClient(sock, py9p.Credentials(user), None)
     else:
+        print "testing initial py9p"
         cl = CmdClient(py9p.Sock(sock, 0, 0), 'none', user, None, None, 0)
 
-    t = timeit.Timer('cl.cat("sample1")','from __main__ import cl')
-    print "1000 cats (walk/open/read/clunk) in", t.timeit(1000), "seconds"
+    if len(sys.argv) > 1 and sys.argv[1] == "profile":
+        for x in range(1000):
+            cl.cat("sample1")
+    else:
+        t = timeit.Timer('cl.cat("sample1")','from __main__ import cl')
+        print "1000 cats (walk/open/read/clunk) in", t.timeit(1000), "seconds"
