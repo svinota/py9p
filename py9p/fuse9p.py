@@ -209,8 +209,7 @@ class ClientFS(fuse.Fuse):
         self.dotu = 1
         self.keep_reconnect = keep_reconnect
         self._lock = threading.Lock()
-        self._rlock = threading.Lock()
-        self._wlock = threading.Lock()
+        self._rlock = threading.RLock()
         self._interval = 1
         self._reconnect_event = threading.Event()
         self._connected_event = threading.Event()
