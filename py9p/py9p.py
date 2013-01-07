@@ -33,17 +33,11 @@ import traceback
 import io
 import threading
 import struct
+from . import utils as c9
 
-if sys.version_info[0] == 2:
-    def bytes3(x):
-        if isinstance(x, unicode):
-            return bytes(x.encode('utf-8'))
-        else:
-            return bytes(x)
-else:
+if sys.version_info[0] == 3:
     unicode = str
-    def bytes3(x):
-        return bytes(x, 'utf-8')
+
 
 IOHDRSZ = 24
 PORT = 564
@@ -240,7 +234,7 @@ class Marshal9P(object):
         """Encode data string with 2-byte length"""
         self.buf.write(struct.pack("H", len(x)))
         if isinstance(x, str) or isinstance(x, unicode):
-            x = bytes3(x)
+            x = c9.bytes3(x)
         self.buf.write(x)
 
     def decS(self):
@@ -251,7 +245,7 @@ class Marshal9P(object):
         """Encode data string with 4-byte length"""
         self.buf.write(struct.pack("I", len(d)))
         if isinstance(d, str) or isinstance(d, unicode):
-            d = bytes3(d)
+            d = c9.bytes3(d)
         self.buf.write(d)
 
     def decD(self):
@@ -847,7 +841,7 @@ class Server(object):
         if authmode is None:
             self.authfs = None
         elif authmode == 'pki':
-            import pki
+            from py9p import pki
             self.authfs = pki.AuthFs(key)
         else:
             raise ServerError("unsupported auth mode")
@@ -1009,7 +1003,7 @@ class Server(object):
         req.ofcall.tag = req.ifcall.tag
         if error:
             req.ofcall.type = Rerror
-            req.ofcall.ename = bytes3(error)
+            req.ofcall.ename = c9.bytes3(error)
             if not errno:
                 errno = ERRUNDEF
             req.ofcall.errno = errno
@@ -1434,8 +1428,8 @@ class Server(object):
 class Credentials(object):
     def __init__(self, user, authmode=None, passwd=None,
             keyfile=None, key=None):
-        self.user = bytes3(user) if isinstance(user, str) else user
-        self.passwd = bytes3(passwd) if isinstance(passwd, str) else passwd
+        self.user = c9.bytes3(user) if isinstance(user, str) else user
+        self.passwd = c9.bytes3(passwd) if isinstance(passwd, str) else passwd
         self.key = key
         self.authmode = authmode
         if self.authmode == "pki":
@@ -1515,7 +1509,7 @@ class Client(object):
         fcall = Fcall(Twalk)
         fcall.fid = fid
         fcall.newfid = newfid
-        fcall.wname = [bytes3(x) for x in wnames]
+        fcall.wname = [c9.bytes3(x) for x in wnames]
         return self._rpc(fcall)
 
     def _open(self, fid, mode):

@@ -36,9 +36,9 @@ from py9p import py9p
 def _os(func, *args):
     try:
         return func(*args)
-    except OSError, e:
+    except OSError as e:
         raise py9p.ServerError(e.args)
-    except IOError, e:
+    except IOError as e:
         raise py9p.ServerError(e.args)
 
 
@@ -88,7 +88,7 @@ class LocalFs(object):
         s = _os(os.lstat, f)
         u = uidname(s.st_uid)
         g = gidname(s.st_gid)
-        res = s.st_mode & 0777
+        res = s.st_mode & 0o777
         type = 0
         ext = ""
         if stat.S_ISDIR(s.st_mode):
@@ -142,7 +142,7 @@ class LocalFs(object):
         else:                # py9p.OREAD and otherwise
             m = "rb"
         if not (f.qid.type & py9p.QTDIR) and not stat.S_ISLNK(s.st_mode):
-            f.fd = _os(file, f.localpath, m)
+            f.fd = _os(open, f.localpath, m)
         srv.respond(req, None)
 
     def walk(self, srv, req):
@@ -218,13 +218,13 @@ class LocalFs(object):
             return
         name = f.localpath + '/' + req.ifcall.name
         if req.ifcall.perm & py9p.DMDIR:
-            perm = req.ifcall.perm & (~0777 | (f.mode & 0777))
+            perm = req.ifcall.perm & (~0o777 | (f.mode & 0o777))
             _os(os.mkdir, name, req.ifcall.perm & ~(py9p.DMDIR))
         elif req.ifcall.perm & py9p.DMSYMLINK and self.dotu:
             _os(os.symlink, req.ifcall.extension, name)
         else:
-            perm = req.ifcall.perm & (~0666 | (f.mode & 0666))
-            _os(file, name, "w+").close()
+            perm = req.ifcall.perm & (~0o666 | (f.mode & 0o666))
+            _os(open, name, "w+").close()
             _os(os.chmod, name, perm)
             if (req.ifcall.mode & 3) == py9p.OWRITE:
                 if req.ifcall.mode & py9p.OTRUNC:
@@ -308,9 +308,8 @@ class LocalFs(object):
 
 
 def usage(prog):
-    print >> sys.stderr, \
-            "usage:  %s [-dDw] [-c mode] [-p port] [-r root] " \
-            "[-a address] [srvuser [domain]]" % prog
+    print("usage:  %s [-dDw] [-c mode] [-p port] [-r root] " \
+            "[-a address] [srvuser [domain]]" % prog)
     sys.exit(1)
 
 
@@ -350,22 +349,15 @@ def main():
         if opt == '-c':
             authmode = optarg
 
-    if authmode == 'sk1':
-        if len(args) != 2:
-            print >>sys.stderr, 'missing user and authsrv'
-            usage(prog)
-        else:
-            py9p.sk1 = __import__("py9p.sk1").sk1
-            user = args[0]
-            dom = args[1]
-            passwd = getpass.getpass()
-            key = py9p.sk1.makeKey(passwd)
-    elif authmode == 'pki':
-        py9p.pki = __import__("py9p.pki").pki
-        user = 'admin'
+    if authmode == 'pki':
+        try:
+            py9p.pki = __import__("py9p.pki").pki
+            user = 'admin'
+        except:
+            import traceback
+            traceback.print_exc()
     elif authmode is not None and authmode != 'none':
-        print >> sys.stderr, \
-            "unknown auth type: %s; accepted: pki, sk1, none" % authmode
+        print("unknown auth type: %s; accepted: pki, sk1, none" % authmode)
         sys.exit(1)
 
     srv = py9p.Server(listen=(listen, port),
@@ -382,4 +374,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print "interrupted."
+        print("interrupted.")
