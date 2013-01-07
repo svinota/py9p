@@ -44,15 +44,14 @@ import random
 import getpass
 import cPickle as pickle
 import Crypto.Util as util
+import hashlib
+from py9p import py9p
 from Crypto.Cipher import DES3, AES
 from Crypto.PublicKey import RSA, DSA
 from Crypto.Util.randpool import RandomPool
 from Crypto.Util import number
 from Crypto.Hash import MD5
 from binascii import unhexlify
-from hashlib import md5
-
-import py9p
 
 
 class Error(Exception):
@@ -183,8 +182,8 @@ def privkeytostr(key, passphrase=None):
         hexiv = ''.join(['%02X' % ord(x) for x in iv])
         keyData += 'Proc-Type: 4,ENCRYPTED\n'
         keyData += 'DEK-Info: DES-EDE3-CBC,%s\n\n' % hexiv
-        ba = md5(passphrase + iv).digest()
-        bb = md5(ba + passphrase + iv).digest()
+        ba = hashlib.md5(passphrase + iv).digest()
+        bb = hashlib.md5(ba + passphrase + iv).digest()
         encKey = (ba + bb)[:24]
     asn1Data = asn1pack([objData])
     if passphrase:
