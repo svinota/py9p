@@ -30,7 +30,20 @@ import sys
 import socket
 import select
 import traceback
-import marshal9p
+import io
+import threading
+import struct
+
+if sys.version_info[0] == 2:
+    def bytes3(x):
+        if isinstance(x, unicode):
+            return bytes(x.encode('utf-8'))
+        else:
+            return bytes(x)
+else:
+    unicode = str
+    def bytes3(x):
+        return bytes(x, 'utf-8')
 
 IOHDRSZ = 24
 PORT = 564
@@ -180,6 +193,333 @@ class VersionError(Error):
     pass
 
 
+class Marshal9P(object):
+    chatty = False
+
+    @property
+    def length(self):
+        p = self.buf.tell()
+        self.buf.seek(0, 2)
+        l = self.buf.tell()
+        self.buf.seek(p)
+        return l
+
+    def enc1(self, x):
+        """Encode 1-byte unsigned"""
+        self.buf.write(struct.pack('B', x))
+
+    def dec1(self):
+        """Decode 1-byte unsigned"""
+        return struct.unpack('b', self.buf.read(1))[0]
+
+    def enc2(self, x):
+        """Encode 2-byte unsigned"""
+        self.buf.write(struct.pack('H', x))
+
+    def dec2(self):
+        """Decode 2-byte unsigned"""
+        return struct.unpack('H', self.buf.read(2))[0]
+
+    def enc4(self, x):
+        """Encode 4-byte unsigned"""
+        self.buf.write(struct.pack('I', x))
+
+    def dec4(self):
+        """Decode 4-byte unsigned"""
+        return struct.unpack('I', self.buf.read(4))[0]
+
+    def enc8(self, x):
+        """Encode 8-byte unsigned"""
+        self.buf.write(struct.pack('Q', x))
+
+    def dec8(self):
+        """Decode 8-byte unsigned"""
+        return struct.unpack('Q', self.buf.read(8))[0]
+
+    def encS(self, x):
+        """Encode data string with 2-byte length"""
+        self.buf.write(struct.pack("H", len(x)))
+        if isinstance(x, str) or isinstance(x, unicode):
+            x = bytes3(x)
+        self.buf.write(x)
+
+    def decS(self):
+        """Decode data string with 2-byte length"""
+        return self.buf.read(self.dec2())
+
+    def encD(self, d):
+        """Encode data string with 4-byte length"""
+        self.buf.write(struct.pack("I", len(d)))
+        if isinstance(d, str) or isinstance(d, unicode):
+            d = bytes3(d)
+        self.buf.write(d)
+
+    def decD(self):
+        """Decode data string with 4-byte length"""
+        return self.buf.read(self.dec4())
+
+    def encF(self, *argv):
+        """Encode data directly by struct.pack"""
+        self.buf.write(struct.pack(*argv))
+
+    def decF(self, fmt, length):
+        """Decode data by struct.unpack"""
+        return struct.unpack(fmt, self.buf.read(length))
+
+    def encQ(self, q):
+        """Encode Qid structure"""
+        self.encF("=BIQ", q.type, q.vers, q.path)
+
+    def decQ(self):
+        """Decode Qid structure"""
+        return Qid(self.dec1(), self.dec4(), self.dec8())
+
+    def __init__(self, dotu=0, chatty=False):
+        self.chatty = chatty
+        self.dotu = dotu
+        self._lock = threading.Lock()
+        self.buf = None
+
+    def _checkType(self, t):
+        if t not in cmdName:
+            raise Error("Invalid message type %d" % t)
+
+    def _checkSize(self, v, mask):
+        if v != v & mask:
+            raise Error("Invalid value %d" % v)
+
+    def _checkLen(self, x, l):
+        if len(x) != l:
+            raise Error("Wrong length %d, expected %d: %r" % (
+                len(x), l, x))
+
+    def setBuffer(self, init=b""):
+        self.buf = io.BytesIO()
+        self.buf.write(init)
+
+    def send(self, fd, fcall):
+        "Format and send a message"
+        with self._lock:
+            self.setBuffer(b"0000")
+            self._checkType(fcall.type)
+            if self.chatty:
+                print("-%d-> %s %s %s" % (fd.fileno(), cmdName[fcall.type], \
+                    fcall.tag, fcall.tostr()))
+            self.enc(fcall)
+            self.buf.seek(0)
+            self.enc4(self.length)
+            fd.write(self.buf.getvalue())
+
+    def recv(self, fd):
+        "Read and decode a message"
+        with self._lock:
+            size = struct.unpack("I", fd.read(4))[0]
+            if size > 0xffffffff or size < 7:
+                raise Error("Bad message size: %d" % size)
+            self.setBuffer(fd.read(size - 4))
+            self.buf.seek(0)
+            mtype, tag = self.decF("=BH", 3)
+            self._checkType(mtype)
+            fcall = Fcall(mtype, tag)
+            self.dec(fcall)
+            # self._checkResid() -- FIXME: check the message residue
+            if self.chatty:
+                print("<-%d- %s %s %s" % (fd.fileno(), cmdName[mtype],
+                        tag, fcall.tostr()))
+            return fcall
+
+    def encstat(self, stats, enclen=1):
+        statsz = 0
+        for x in stats:
+            if self.dotu:
+                x.statsz = 61 + \
+                        len(x.name) + len(x.uid) + len(x.gid) + \
+                        len(x.muid) + len(x.extension)
+                statsz += x.statsz
+            else:
+                x.statsz = 47 + \
+                        len(x.name) + len(x.uid) + len(x.gid) + \
+                        len(x.muid)
+                statsz += x.statsz
+        if enclen:
+            self.enc2(statsz + 2)
+
+        for x in stats:
+            self.encF("=HHIBIQIIIQ",
+                    x.statsz, x.type, x.dev, x.qid.type, x.qid.vers,
+                    x.qid.path, x.mode, x.atime, x.mtime, x.length)
+            self.encS(x.name)
+            self.encS(x.uid)
+            self.encS(x.gid)
+            self.encS(x.muid)
+            if self.dotu:
+                self.encS(x.extension)
+                self.encF("=III",
+                        x.uidnum, x.gidnum, x.muidnum)
+
+    def enc(self, fcall):
+        self.encF("=BH", fcall.type, fcall.tag)
+        if fcall.type in (Tversion, Rversion):
+            self.encF("I", fcall.msize)
+            self.encS(fcall.version)
+        elif fcall.type == Tauth:
+            self.encF("I", fcall.afid)
+            self.encS(fcall.uname)
+            self.encS(fcall.aname)
+            if self.dotu:
+                self.encF("I", fcall.uidnum)
+        elif fcall.type == Rauth:
+            self.encQ(fcall.aqid)
+        elif fcall.type == Rerror:
+            self.encS(fcall.ename)
+            if self.dotu:
+                self.encF("I", fcall.errno)
+        elif fcall.type == Tflush:
+            self.encF("H", fcall.oldtag)
+        elif fcall.type == Tattach:
+            self.encF("=II", fcall.fid, fcall.afid)
+            self.encS(fcall.uname)
+            self.encS(fcall.aname)
+            if self.dotu:
+                self.encF("I", fcall.uidnum)
+        elif fcall.type == Rattach:
+            self.encQ(fcall.qid)
+        elif fcall.type == Twalk:
+            self.encF("=IIH", fcall.fid, fcall.newfid,
+                    len(fcall.wname))
+            for x in fcall.wname:
+                self.encS(x)
+        elif fcall.type == Rwalk:
+            self.encF("H", len(fcall.wqid))
+            for x in fcall.wqid:
+                self.encQ(x)
+        elif fcall.type == Topen:
+            self.encF("=IB", fcall.fid, fcall.mode)
+        elif fcall.type in (Ropen, Rcreate):
+            self.encQ(fcall.qid)
+            self.encF("I", fcall.iounit)
+        elif fcall.type == Tcreate:
+            self.encF("I", fcall.fid)
+            self.encS(fcall.name)
+            self.encF("=IB", fcall.perm, fcall.mode)
+            if self.dotu:
+                self.encS(fcall.extension)
+        elif fcall.type == Tread:
+            self.encF("=IQI", fcall.fid, fcall.offset,
+                    fcall.count)
+        elif fcall.type == Rread:
+            self.encD(fcall.data)
+        elif fcall.type == Twrite:
+            self.encF("=IQI", fcall.fid, fcall.offset,
+                    len(fcall.data))
+            self.buf.write(fcall.data)
+        elif fcall.type == Rwrite:
+            self.encF("I", fcall.count)
+        elif fcall.type in (Tclunk,  Tremove, Tstat):
+            self.encF("I", fcall.fid)
+        elif fcall.type in (Rstat, Twstat):
+            if fcall.type == Twstat:
+                self.encF("I", fcall.fid)
+            self.encstat(fcall.stat, 1)
+
+    def decstat(self, stats, enclen=0):
+        if enclen:
+            # feed 2 bytes of total size
+            self.buf.read(2)
+        while self.buf.tell() < self.length:
+            self.buf.read(2)
+
+            s = Dir(self.dotu)
+            (s.type,
+                    s.dev,
+                    typ, vers, path,
+                    s.mode,
+                    s.atime,
+                    s.mtime,
+                    s.length) = self.decF("=HIBIQIIIQ", 39)
+            s.qid = Qid(typ, vers, path)
+            s.name = self.decS()     # name
+            s.uid = self.decS()      # uid
+            s.gid = self.decS()      # gid
+            s.muid = self.decS()     # muid
+            if self.dotu:
+                s.extension = self.decS()
+                (s.uidnum,
+                        s.gidnum,
+                        s.muidnum) = self.decF("=III", 12)
+            stats.append(s)
+
+    def dec(self, fcall):
+        if fcall.type in (Tversion, Rversion):
+            fcall.msize = self.dec4()
+            fcall.version = self.decS()
+        elif fcall.type == Tauth:
+            fcall.afid = self.dec4()
+            fcall.uname = self.decS()
+            fcall.aname = self.decS()
+            if self.dotu:
+                fcall.uidnum = self.dec4()
+        elif fcall.type == Rauth:
+            fcall.aqid = self.decQ()
+        elif fcall.type == Rerror:
+            fcall.ename = self.decS()
+            if self.dotu:
+                fcall.errno = self.dec4()
+        elif fcall.type == Tflush:
+            fcall.oldtag = self.dec2()
+        elif fcall.type == Tattach:
+            fcall.fid = self.dec4()
+            fcall.afid = self.dec4()
+            fcall.uname = self.decS()
+            fcall.aname = self.decS()
+            if self.dotu:
+                fcall.uidnum = self.dec4()
+        elif fcall.type == Rattach:
+            fcall.qid = self.decQ()
+        elif fcall.type == Twalk:
+            fcall.fid = self.dec4()
+            fcall.newfid = self.dec4()
+            fcall.nwname = self.dec2()
+            fcall.wname = [self.decS().decode('utf-8') for n in range(fcall.nwname)]
+        elif fcall.type == Rwalk:
+            fcall.nwqid = self.dec2()
+            fcall.wqid = [self.decQ() for n in range(fcall.nwqid)]
+        elif fcall.type == Topen:
+            fcall.fid = self.dec4()
+            fcall.mode = self.dec1()
+        elif fcall.type in (Ropen, Rcreate):
+            fcall.qid = self.decQ()
+            fcall.iounit = self.dec4()
+        elif fcall.type == Tcreate:
+            fcall.fid = self.dec4()
+            fcall.name = self.decS().decode('utf-8')
+            fcall.perm = self.dec4()
+            fcall.mode = self.dec1()
+            if self.dotu:
+                fcall.extension = self.decS().decode('utf-8')
+        elif fcall.type == Tread:
+            fcall.fid = self.dec4()
+            fcall.offset = self.dec8()
+            fcall.count = self.dec4()
+        elif fcall.type == Rread:
+            fcall.data = self.decD()
+        elif fcall.type == Twrite:
+            fcall.fid = self.dec4()
+            fcall.offset = self.dec8()
+            fcall.count = self.dec4()
+            fcall.data = self.buf.read(fcall.count)
+        elif fcall.type == Rwrite:
+            fcall.count = self.dec4()
+        elif fcall.type in (Tclunk, Tremove, Tstat):
+            fcall.fid = self.dec4()
+        elif fcall.type in (Rstat, Twstat):
+            if fcall.type == Twstat:
+                fcall.fid = self.dec4()
+            self.decstat(fcall.stat, 1)
+
+        return fcall
+
+
 def modetostr(mode):
     bits = ["---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"]
 
@@ -281,7 +621,7 @@ class Sock(object):
         self.reqs = {}  # reqs are per client
         self.uname = None
         self.closing = False
-        self.marshal = marshal9p.Marshal9P(dotu=dotu, chatty=chatty)
+        self.marshal = Marshal9P(dotu=dotu, chatty=chatty)
 
     def send(self, x):
         self.marshal.send(self, x)
@@ -503,9 +843,6 @@ class Server(object):
         elif authmode == 'pki':
             import pki
             self.authfs = pki.AuthFs(key)
-        elif authmode == 'sk1':
-            import sk1
-            self.authfs = sk1.AuthFs(user, dom, key)
         else:
             raise ServerError("unsupported auth mode")
 
@@ -1258,16 +1595,6 @@ class Client(object):
 
             if credentials.authmode is None:
                 raise ClientError('no authentication method')
-            elif credentials.authmode == 'sk1':
-                import sk1
-                if credentials.passwd is None:
-                    raise ClientError("Password required")
-                try:
-                    sk1.clientAuth(self, fcall, credentials.user,
-                            sk1.makeKey(credentials.passwd),
-                            authsrv, sk1.AUTHPORT)
-                except socket.error, e:
-                    raise ClientError("%s: %s" % (authsrv, e.args[1]))
             elif credentials.authmode == 'pki':
                 import pki
                 pki.clientAuth(self, fcall, credentials)
@@ -1374,7 +1701,7 @@ class Client(object):
             buf = self.read(self.msize)
             if len(buf) == 0:
                 break
-            p9 = marshal9p.Marshal9P()
+            p9 = Marshal9P()
             p9.setBuffer(buf)
             p9.buf.seek(0)
             fcall = Fcall(Rstat)
