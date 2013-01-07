@@ -9,6 +9,15 @@ from py9p import py9p
 import getopt
 import getpass
 
+
+if sys.version_info[0] == 2:
+    def bytes3(x):
+        return bytes(x)
+else:
+    def bytes3(x):
+        return bytes(x, 'utf-8')
+
+
 class SampleFs(py9p.Server):
     """
     A sample plugin filesystem.
@@ -22,11 +31,11 @@ class SampleFs(py9p.Server):
         rootdir.children = []
         rootdir.type = 0
         rootdir.dev = 0
-        rootdir.mode = 020000000755
+        rootdir.mode = 0o20000000755
         rootdir.atime = rootdir.mtime = int(time.time())
         rootdir.length = 0
         rootdir.name = '/'
-        rootdir.uid = rootdir.gid = rootdir.muid = os.environ['USER']
+        rootdir.uid = rootdir.gid = rootdir.muid = bytes3(os.environ['USER'])
         rootdir.qid = py9p.Qid(py9p.QTDIR, 0, py9p.hash8(rootdir.name))
         rootdir.parent = rootdir
         self.root = rootdir    # / is its own parent, just so we don't fall off the edge of the earth
@@ -37,13 +46,13 @@ class SampleFs(py9p.Server):
         f.qid = py9p.Qid(0, 0, py9p.hash8(f.name))
         f.length = 1024
         f.parent = rootdir
-        f.mode = 0644
+        f.mode = 0o644
         self.root.children.append(f)
         f = copy.copy(f)
         f.name = 'sample2'
         f.length = 8192
         f.qid = py9p.Qid(0, 0, py9p.hash8(f.name))
-        f.mode = 0644
+        f.mode = 0o644
         self.root.children.append(f)
 
         self.files[self.root.qid.path] = self.root
@@ -53,7 +62,7 @@ class SampleFs(py9p.Server):
     def open(self, srv, req):
         '''If we have a file tree then simply check whether the Qid matches
         anything inside. respond qid and iounit are set by protocol'''
-        if not self.files.has_key(req.fid.qid.path):
+        if req.fid.qid.path not in self.files:
             srv.respond(req, "unknown file")
         f = self.files[req.fid.qid.path]
         if (req.ifcall.mode & f.mode) != py9p.OREAD :
@@ -85,13 +94,13 @@ class SampleFs(py9p.Server):
         return
 
     def stat(self, srv, req):
-        if not self.files.has_key(req.fid.qid.path):
+        if req.fid.qid.path not in self.files:
             raise py9p.ServerError("unknown file")
         req.ofcall.stat.append(self.files[req.fid.qid.path])
         srv.respond(req, None)
 
     def read(self, srv, req):
-        if not self.files.has_key(req.fid.qid.path):
+        if req.fid.qid.path not in self.files:
             raise py9p.ServerError("unknown file")
 
         f = self.files[req.fid.qid.path]
@@ -115,7 +124,7 @@ class SampleFs(py9p.Server):
         srv.respond(req, None)
 
 def usage(argv0):
-    print "usage:  %s [-dD] [-p port] [-l listen] [-a authmode] [srvuser domain]" % argv0
+    print("usage:  %s [-dD] [-p port] [-l listen] [-a authmode] [srvuser domain]" % argv0)
     sys.exit(1)
 
 def main(prog, *args):
@@ -133,7 +142,7 @@ def main(prog, *args):
 
     try:
         opt,args = getopt.getopt(args, "dDp:l:a:")
-    except Exception, msg:
+    except Exception as msg:
         usage(prog)
     for opt,optarg in opt:
         if opt == '-d':
@@ -149,7 +158,7 @@ def main(prog, *args):
 
     if authmode == 'sk1':
         if len(args) != 2:
-            print >>sys.stderr, 'missing user and authsrv'
+            print('missing user and authsrv')
             usage(prog)
         else:
             py9p.sk1 = __import__("py9p.sk1").sk1
@@ -161,7 +170,7 @@ def main(prog, *args):
         py9p.pki = __import__("py9p.pki").pki
         user = 'admin'
     elif authmode != None and authmode != 'none':
-        print >>sys.stderr, "unknown auth type: %s; accepted: pki or sk1"%authmode
+        print("unknown auth type: %s; accepted: pki or sk1"%authmode)
         sys.exit(1)
 
     srv = py9p.Server(listen=(listen, port), authmode=authmode, user=user, dom=dom, key=key, chatty=dbg)
@@ -173,4 +182,4 @@ if __name__ == "__main__" :
     try :
         main(*sys.argv)
     except KeyboardInterrupt :
-        print "interrupted."
+        print("interrupted.")
