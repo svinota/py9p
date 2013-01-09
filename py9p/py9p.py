@@ -1047,8 +1047,7 @@ class Server(object):
             except Error as e:
                 if self.chatty:
                     traceback.print_exc()
-                self.respond(req, 'server error:' + str(e.args[0][1]),
-                        e.args[0][0])
+                self.respond(req, str(e.args[0][1]), e.args[0][0])
             except Exception as e:
                 if self.chatty:
                     traceback.print_exc()
