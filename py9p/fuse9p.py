@@ -44,13 +44,18 @@ FAIL_TIMEOUT = 0.5
 uid_map = {}
 gid_map = {}
 rpccodes = {
-        "duplicate fid": -errno.EBADFD,
-        "unknown fid": -errno.EBADFD,
-        "create prohibited": -errno.EPERM,
-        "remove prohibited": -errno.EPERM,
-        "stat prohibited": -errno.EPERM,
-        "wstat prohibited": -errno.EPERM,
-        "permission denied": -errno.EPERM}
+        py9p.Eunknownfid: -errno.EBADFD,
+        py9p.Edupfid: -errno.EBADFD,
+        py9p.Ebaddir: -errno.EBADFD,
+        py9p.Enocreate: -errno.EPERM,
+        py9p.Enoremove: -errno.EPERM,
+        py9p.Enostat: -errno.EPERM,
+        py9p.Enowstat: -errno.EPERM,
+        py9p.Eperm: -errno.EPERM,
+        py9p.Enotfound: -errno.ENOENT,
+        py9p.Eisdir: -errno.EISDIR,
+        py9p.Ewalknotdir: -errno.ENOTDIR,
+        py9p.Ecreatenondir: -errno.ENOTDIR}
 
 
 class Error(py9p.Error):
@@ -120,7 +125,7 @@ def guard(c):
                 ret = -errno.EMFILE
                 break
             except py9p.RpcError as e:
-                ret = rpccodes.get(e.message, -errno.EIO)
+                ret = rpccodes.get(e.message.lower(), -errno.EIO)
                 break
             except:
                 if self.debug:
@@ -599,7 +604,7 @@ class ClientFS(fuse.Fuse):
         self._reconnect_event.set()
 
         dirs = self._readdir(path, offset)
-        if dirs == -errno.EIO:
+        if not isinstance(dirs, list):
             dirs = []
 
         if path == "/":
