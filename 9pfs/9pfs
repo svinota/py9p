@@ -179,6 +179,7 @@ class LocalFs(object):
                     f = nf
                 else:
                     d.localpath = npath
+                    d.basedir = "/".join(npath.split("/")[:-1])
                     d.parent = f
                     self.files[d.qid.path] = d
                     req.ofcall.wqid.append(d.qid)
@@ -244,6 +245,7 @@ class LocalFs(object):
         d.parent = f
         self.files[d.qid.path] = d
         self.files[d.qid.path].localpath = name
+        self.files[d.qid.path].basedir = "/".join(name.split("/")[:-1])
         if fd:
             self.files[d.qid.path].fd = fd
         req.ofcall.qid = d.qid
@@ -268,8 +270,32 @@ class LocalFs(object):
         req.ofcall.stat.append(self.pathtodir(f.localpath))
         srv.respond(req, None)
 
+    def wstat(self, srv, req):
+
+        istat = req.ifcall.stat[0]
+        f = self.getfile(req.fid.qid.path)
+        if (istat.uidnum >> 16) == 0xFFFF:
+            istat.uidnum = -1
+        if (istat.gidnum >> 16) == 0xFFFF:
+            istat.gidnum = -1
+
+        _os(os.chown, f.localpath, istat.uidnum, istat.gidnum)
+        # change mode?
+        if istat.mode != 0xFFFFFFFF:
+            s = _os(os.lstat, f.localpath)
+            imode = s.st_mode
+            mode = ((imode & 0o7777) ^ imode) |\
+                    (istat.mode & 0o7777)
+            _os(os.chmod, f.localpath, mode)
+        # change name?
+        if istat.name:
+            _os(os.rename, f.localpath, "/".join((f.basedir, 
+                istat.name.decode('utf-8'))))
+        srv.respond(req, None)
+
     def read(self, srv, req):
         f = self.getfile(req.fid.qid.path)
+        print(dir(f))
         s = _os(os.lstat, f.localpath)
         if not f:
             srv.respond(req, "unknown file")
