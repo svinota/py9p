@@ -295,7 +295,6 @@ class LocalFs(object):
 
     def read(self, srv, req):
         f = self.getfile(req.fid.qid.path)
-        print(dir(f))
         s = _os(os.lstat, f.localpath)
         if not f:
             srv.respond(req, "unknown file")
