@@ -307,7 +307,7 @@ class LocalFs(object):
         elif f.qid.type & py9p.QTDIR:
             # no need to add anything to self.files yet
             # wait until they walk to it
-            l = os.listdir(f.localpath)
+            l = _os(os.listdir, f.localpath)
             l = filter(lambda x: x not in ('.', '..'), l)
             req.ofcall.stat = []
             for x in l:
