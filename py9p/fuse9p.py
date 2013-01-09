@@ -38,6 +38,8 @@ MIN_FID = 1024
 MAX_FID = 65535
 MAX_RECONNECT_INTERVAL = 1024
 IOUNIT = 1024 * 16
+FAIL_TRIES = 2
+FAIL_TIMEOUT = 0.5
 
 uid_map = {}
 gid_map = {}
@@ -107,24 +109,27 @@ def guard(c):
     """
     def wrapped(self, *argv, **kwarg):
         ret = -errno.EIO
-        tfid = None
-        try:
-            tfid = self.tfidcache.acquire()
-            with self._rlock:
-                ret = c(self, tfid.fid, *argv, **kwarg)
-        except NoFidError:
-            ret = -errno.EMFILE
-        except py9p.RpcError as e:
-            ret = rpccodes.get(e.message, -errno.EIO)
-        except:
-            if self.debug:
-                traceback.print_exc()
-            if self.keep_reconnect:
-                self._reconnect()
-            else:
-                sys.exit(255)
-        if tfid is not None:
-            self.tfidcache.release(tfid)
+        for i in range(FAIL_TRIES):
+            try:
+                tfid = self.tfidcache.acquire()
+                with self._rlock:
+                    ret = c(self, tfid.fid, *argv, **kwarg)
+                self.tfidcache.release(tfid)
+                break
+            except NoFidError:
+                ret = -errno.EMFILE
+                break
+            except py9p.RpcError as e:
+                ret = rpccodes.get(e.message, -errno.EIO)
+                break
+            except:
+                if self.debug:
+                    traceback.print_exc()
+                if self.keep_reconnect:
+                    self._reconnect()
+                    time.sleep(FAIL_TIMEOUT)
+                else:
+                    sys.exit(255)
         return ret
     return wrapped
 
