@@ -340,9 +340,9 @@ class ClientFS(fuse.Fuse):
             fcall = self.client._open(f.fid, py9p.open2plan(mode))
             f.iounit = fcall.iounit
             return f
-        except:
+        except Exception as e:
             self.fidcache.release(f)
-            return -errno.EIO
+            raise e
 
     @guard
     def _wstat(self, tfid, path,
@@ -549,15 +549,11 @@ class ClientFS(fuse.Fuse):
     def _getattr(self, tfid, path):
         if py9p.hash8(path) in self.dircache:
             return fStat(self.dircache[py9p.hash8(path)])
-        try:
-            self.client._walk(self.client.ROOT,
-                    tfid, filter(None, path.split("/")))
-            ret = self.client._stat(tfid).stat[0]
-        except py9p.RpcError as e:
-            if e.message == "file not found":
-                return -errno.ENOENT
-            else:
-                return -errno.EIO
+
+        self.client._walk(self.client.ROOT,
+                tfid, filter(None, path.split("/")))
+        ret = self.client._stat(tfid).stat[0]
+
         s = fStat(ret)
         self.client._clunk(tfid)
         self.dircache[py9p.hash8(path)] = ret
