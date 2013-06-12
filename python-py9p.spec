@@ -75,11 +75,12 @@ beta development state.
 - symlink support
 - read/write improved
 - 9pfs subpackage
+- 9p marshalling is thread-safe now
+- fuse9p stateful I/O
 - Python 3 sompatibility issues
 
-* Thu Nov 29 2012 Peter V. Saveliev <peet@redhat.com> 1.0.5-2
-- fuse9p stateful I/O
-- 9p marshalling is thread-safe now
+* Thu Feb 14 2013 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 1.0.5-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_19_Mass_Rebuild
 
 * Wed Nov 07 2012 Peter V. Saveliev <peet@redhat.com> 1.0.5-1
 - fuse9p subpackage added (beta)
