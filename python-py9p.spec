@@ -1,6 +1,6 @@
 Name: python-py9p
-Version: 1.0.5
-Release: 2%{?dist}
+Version: 1.0.9
+Release: 1%{?dist}
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Languages
@@ -17,6 +17,20 @@ in Plan9, 9P can be used also for composite file access, RPC etc.
 
 This library provides low-level 9p2000.u API. For high-level look
 into python-pyvfs.
+
+%package -n 9pfs
+Summary: Plan9 filesystem server
+License: MIT
+Group: Applications/File
+URL: https://github.com/svinota/py9p
+Requires: %name = %version-%release
+
+%description -n 9pfs
+Protocol 9P is developed for Plan9 operating system from Bell Labs.
+It is used for remote file access, and since files are key objects
+in Plan9, 9P can be used also for composite file access, RPC etc.
+
+This package contains simple file server for the 9p protocoll.
 
 %package -n fuse9p
 Summary: Plan9 filesystem client for FUSE
@@ -51,8 +65,18 @@ beta development state.
 %_bindir/fuse9p
 %_mandir/man1/fuse9p.*
 
+%files -n 9pfs
+%_bindir/9pfs
+%_mandir/man1/9pfs.*
+
 
 %changelog
+* Wed Jun 12 2013 Peter V. Saveliev <peet@redhat.com> 1.0.9-1
+- symlink support
+- read/write improved
+- 9pfs subpackage
+- Python 3 sompatibility issues
+
 * Thu Nov 29 2012 Peter V. Saveliev <peet@redhat.com> 1.0.5-2
 - fuse9p stateful I/O
 - 9p marshalling is thread-safe now
