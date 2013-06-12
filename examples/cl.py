@@ -16,9 +16,9 @@ class Error(py9p.Error): pass
 def _os(func, *args):
     try:
         return func(*args)
-    except OSError,e:
+    except OSError as e:
         raise Error(e.args[1])
-    except IOError,e:
+    except IOError as e:
         raise Error(e.args[1])
 
 class HistoryConsole(code.InteractiveConsole):
@@ -41,7 +41,7 @@ class HistoryConsole(code.InteractiveConsole):
 
     
 class CmdClient(py9p.Client):
-    def mkdir(self, pstr, perm=0755):
+    def mkdir(self, pstr, perm=0o755):
         self.create(pstr, perm|py9p.DMDIR)
         self.close()
 
@@ -54,7 +54,7 @@ class CmdClient(py9p.Client):
             buf = self.read(self.msize)
             if len(buf) == 0:
                 break
-            out.write(buf)
+            out.write(buf.decode('utf-8'))
         self.close()
 
     def put(self, name, inf=None):
@@ -75,7 +75,7 @@ class CmdClient(py9p.Client):
 
     def _cmdwrite(self, args):
         if len(args) < 1:
-            print "write: no file name"
+            print("write: no file name")
         elif len(args) == 1:
             buf = ''
         else:
@@ -91,7 +91,7 @@ class CmdClient(py9p.Client):
 
     def _cmdecho(self, args):
         if len(args) < 1:
-            print "echo: no file name"
+            print("echo: no file name")
         elif len(args) == 1:
             buf = ''
         else:
@@ -110,7 +110,7 @@ class CmdClient(py9p.Client):
     def _cmdstat(self, args):
         for a in args:
             stat = self.stat(a)
-            print stat[0].tolstr()
+            print(stat[0].tolstr())
 
     def _cmdls(self, args):
         long = 0
@@ -120,13 +120,13 @@ class CmdClient(py9p.Client):
         ret = self.ls(long, args)
         if ret:
             if long:
-                print '\n'.join(ret)
+                print('\n'.join(ret))
             else:
-                print ' '.join(ret)
+                print(' '.join(ret))
 
     def _cmdcd(self, args):
         if len(args) != 1:
-            print "usage: cd path"
+            print("usage: cd path")
             return
         if self.cd(args[0]):
             if args[0][0] == '/':
@@ -137,19 +137,19 @@ class CmdClient(py9p.Client):
 
     def _cmdio(self, args):
         if len(args) != 1:
-            print "usage: io path"
+            print("usage: io path")
             return
         self.io(args[0])
 
     def _cmdcat(self, args):
         if len(args) != 1:
-            print "usage: cat path"
+            print("usage: cat path")
             return
         self.cat(args[0])
 
     def _cmdmkdir(self, args):
         if len(args) != 1:
-            print "usage: mkdir path"
+            print("usage: mkdir path")
             return
         self.mkdir(args[0])
     def _cmdget(self, args):
@@ -159,7 +159,7 @@ class CmdClient(py9p.Client):
         elif len(args) == 2:
             f,f2 = args
         else:
-            print "usage: get path [localname]"
+            print("usage: get path [localname]")
             return
         out = _os(file, f2, "wb")
         self.cat(f, out)
@@ -171,7 +171,7 @@ class CmdClient(py9p.Client):
         elif len(args) == 2:
             f,f2 = args
         else:
-            print "usage: put path [remotename]"
+            print("usage: put path [remotename]")
             return
         if f == '-':
             inf = sys.stdin
@@ -182,18 +182,18 @@ class CmdClient(py9p.Client):
             inf.close()
     def _cmdpwd(self, args):
         if len(args) == 0:
-            print os.path.normpath(self.path)
+            print(os.path.normpath(self.path))
         else:
-            print "usage: pwd"
+            print("usage: pwd")
     def _cmdrm(self, args):
         if len(args) == 1:
             self.rm(args[0])
         else:
-            print "usage: rm path"
+            print("usage: rm path")
     def _cmdhelp(self, args):
         cmds = [x[4:] for x in dir(self) if x[:4] == "_cmd"]
         cmds.sort()
-        print "commands: ", " ".join(cmds)
+        print("commands: ", " ".join(cmds))
     def _cmdquit(self, args):
         self.done = 1
     _cmdexit = _cmdquit
@@ -257,15 +257,15 @@ class CmdClient(py9p.Client):
             line = self._nextline()
             if line is None:
                 continue
-            args = filter(None, line.split(" "))
+            args = list(filter(None, line.split(" ")))
             if not args:
                 continue
             cmd,args = args[0],args[1:]
             if cmd in cmdf:
                 try:
                     cmdf[cmd](args)
-                except py9p.Error,e:
-                    print "%s error: %s" % (cmd, e.args[0])
+                except py9p.Error as e:
+                    print("%s error: %s" % (cmd, e.args[0]))
                     if e.args[0] == 'client eof':
                         break
             else:
@@ -274,7 +274,7 @@ class CmdClient(py9p.Client):
                 break
 
 def usage(prog):
-    print "usage: %s [-d] [-m authmode] [-a authsrv] [-k privkey] [user@]srv[:port] [cmd ...]" % prog
+    print("usage: %s [-d] [-m authmode] [-a authsrv] [-k privkey] [user@]srv[:port] [cmd ...]" % prog)
     sys.exit(1)
     
 def main():
@@ -286,8 +286,7 @@ def main():
     authmode = 'none'
     privkey = None
 
-    if os.environ.has_key('USER'):
-        user = os.environ['USER']
+    user = os.environ.get('USER')
     try:
         opt,args = getopt.getopt(args, "da:u:p:m:k:")
     except:
@@ -309,7 +308,7 @@ def main():
             privkey = optarg
     
     if len(args) < 1:
-        print >>sys.stderr, "error: no server to connect to..."
+        print("error: no server to connect to...")
         usage(prog)
 
     srvkey = args[0].split('@', 1)
@@ -326,10 +325,10 @@ def main():
 
     srv = srvkey
     if chatty:
-        print "connecting as %s to %s, port %d" % (user, srv, port)
+        print("connecting as %s to %s, port %d" % (user, srv, port))
 
     if authmode == 'sk1' and authsrv is None:
-        print >>sys.stderr, "assuming %s is also auth server" % srv
+        print("assuming %s is also auth server" % srv)
         authsrv = srv
 
     cmd = args[1:]
@@ -337,8 +336,8 @@ def main():
     sock = socket.socket(socket.AF_INET)
     try:
         sock.connect((srv, port),)
-    except socket.error,e:
-        print "%s: %s" % (srv, e.args[1])
+    except socket.error as e:
+        print("%s: %s" % (srv, e.args[1]))
         return
 
     if authmode == 'sk1' and passwd is None:
@@ -348,19 +347,19 @@ def main():
         cl = CmdClient(sock, creds, authsrv, chatty)
         readline.set_completer(cl.completer)
         cl.cmdLoop(cmd)
-    except py9p.Error,e:
-        print e
+    except py9p.Error as e:
+        print(e)
 
 #'''
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print "interrupted."
+        print("interrupted.")
     except EOFError:
-        print "done."
-    except Exception, m:
-        print "unhandled exception: " + str(m.args)
+        print("done.")
+    except Exception as m:
+        print("unhandled exception: " + str(m.args))
         raise
 '''
 if __name__ == "__main__":

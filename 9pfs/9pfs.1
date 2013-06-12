@@ -1,0 +1,77 @@
+.TH "9pfs" "1" "" "Peter V. Saveliev <peet@redhat.com>" ""
+.SH "NAME"
+9pfs \- 9p2000 file server
+.SH "SYNOPSIS"
+\fB9pfs\fR [\-dDw] [\-c mode] [\-p port] [\-r root] [\-a address] [user [domain]]
+
+.SH "DESCRIPTION"
+9p2000 is a file/RPC protocol developed for Plan9 operationg system.
+Due to its extreme simplicity it can be used to embed file servers in
+different applications to provide access to the internal structures
+and API in runtime.
+
+9pfs is a simle file server that exports a file tree with 9p2000
+protocol.
+
+.SH "OPTIONS"
+\fB\-a\fR address
+.br
+	Address to listen on. Default: 0.0.0.0
+
+\fB\-c\fR mode
+.br
+	Authentication mode. Can be \fBpki\fR or \fBsk1\fR.
+
+\fB\-d\fR
+.br
+	Turn on debug.
+
+\fB\-D\fR
+.br
+	Turn on .u extensions, required for symlink support.
+
+\fB\-p\fR port
+.br
+	Server TCP port, if it differs from the default 9p.
+
+\fB\-r\fR root
+.br
+    A directory to export.
+
+\fB\-w\fR
+.br
+    Allow read/write access. Default: read/only.
+
+
+.SH "AUTHENTICATION"
+\fBpki mode\fR
+
+PKI authentication mode uses standard SSH RSA keys. The server looks for
+the public key in /home/${user}/.ssh/id_rsa.pub.
+
+\fBsk1 mode\fR
+
+\fBdomain\fR should be specified only for sk1 auth mode.
+
+.SH "SEE ALSO"
+\fBssh\-keygen\fR(1), \fBfuse9p\fR(1)
+
+
+.SH "AUTHORS"
+
+ \fB*\fR Peter V. Saveliev \fB<peet@redhat.com>\fR \-\- fuse9p author, py9p library maintainer
+ \fB*\fR Andrey Mirtchovski \fB<aamirtch@ucalgary.ca>\fR \-\- py9p library author
+
+
+.SH "LINKS"
+ \fB*\fR All bugs post to the project page:
+.br
+	\fBhttps://github.com/svinota/py9p/issues\fR
+.br
+ \fB*\fR Project's home:
+.br
+	\fBhttps://github.com/svinota/py9p/\fR
+.br
+ \fB*\fR 9p specifications:
+.br
+	\fBhttp://swtch.com/plan9port/man/man9/\fR

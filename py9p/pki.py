@@ -1,3 +1,25 @@
+# Copyright (c) 2008-2011 Tim Newsham, Andrey Mirtchovski
+# Copyright (c) 2011-2012 Peter V. Saveliev
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 """
 Implementation of basic RSA-key digital signature.
 
@@ -20,17 +42,17 @@ import struct
 import os
 import random
 import getpass
-import cPickle as pickle
+import pickle
 import Crypto.Util as util
+import hashlib
+import sys
+from . import utils as c9
 from Crypto.Cipher import DES3, AES
 from Crypto.PublicKey import RSA, DSA
 from Crypto.Util.randpool import RandomPool
 from Crypto.Util import number
 from Crypto.Hash import MD5
 from binascii import unhexlify
-from hashlib import md5
-
-import py9p
 
 
 class Error(Exception):
@@ -50,6 +72,10 @@ class BadKeyError(Error):
 
 
 class BadKeyPassword(Error):
+    pass
+
+
+class ServerError(Error):
     pass
 
 
@@ -90,10 +116,10 @@ def asn1parse(data):
 def asn1pack(data):
     ret = ''
     for part in data:
-        if type(part) in (type(()), type([])):
+        if type(part) in (tuple, list):
             partData = asn1pack(part)
             partType = SEQUENCE | 0x20
-        elif type(part) in (type(1), type(1L)):
+        elif type(part) in (int, long):
             partData = number.long_to_bytes(part)
             if ord(partData[0]) & (0x80):
                 partData = '\x00' + partData
@@ -161,8 +187,8 @@ def privkeytostr(key, passphrase=None):
         hexiv = ''.join(['%02X' % ord(x) for x in iv])
         keyData += 'Proc-Type: 4,ENCRYPTED\n'
         keyData += 'DEK-Info: DES-EDE3-CBC,%s\n\n' % hexiv
-        ba = md5(passphrase + iv).digest()
-        bb = md5(ba + passphrase + iv).digest()
+        ba = hashlib.md5(passphrase + iv).digest()
+        bb = hashlib.md5(ba + passphrase + iv).digest()
         encKey = (ba + bb)[:24]
     asn1Data = asn1pack([objData])
     if passphrase:
@@ -184,9 +210,9 @@ def pubkeytostr(key, comment=None):
 
 
 def strtopubkey(data):
-    d = base64.decodestring(data.split(' ')[1])
+    d = base64.decodestring(data.split(b' ')[1])
     kind, rest = getNS(d)
-    if kind == 'ssh-rsa':
+    if kind == b'ssh-rsa':
         e, rest = getMP(rest)
         n, rest = getMP(rest)
         return RSA.construct((n, e))
@@ -233,7 +259,7 @@ def strtoprivkey(data, password):
     else:
         keyData = base64.decodestring(''.join(data[1:-1]))
     decodedKey = asn1parse(keyData)
-    if type(decodedKey[0]) == type([]):
+    if isinstance(decodedKey[0], list):
         decodedKey = decodedKey[0]  # this happens with encrypted keys
     if kind == 'RSA':
         n, e, d, p, q = decodedKey[1:6]
@@ -247,7 +273,7 @@ def getprivkey(uname, priv=None, passphrase=None):
     if not uname:
         raise AuthError("no uname")
 
-    if priv == None:
+    if priv is None:
         f = gethome(uname)
         if not f:
             raise BadKeyError("no home dir for user %s" % uname)
@@ -272,8 +298,8 @@ def getchallenge():
     # generate a 16-byte long random string.  (note that the built-
     # in pseudo-random generator uses a 24-bit seed, so this is not
     # as good as it may seem...)
-    challenge = map(lambda i: chr(random.randint(0x20, 0x7e)), range(16))
-    return ''.join(challenge)
+    challenge = map(lambda i: c9.bytes3(chr(random.randint(0x20, 0x7e))), range(16))
+    return b''.join(challenge)
 
 
 class AuthFs(object):
@@ -309,7 +335,7 @@ class AuthFs(object):
             raise AuthError('no uname')
         if uname in self.pubkeys:
             return self.pubkeys[uname]
-        elif pub == None:
+        elif pub is None:
             f = gethome(uname)
             if not f:
                 raise BadKeyError("no home for user %s" % uname)
@@ -317,11 +343,11 @@ class AuthFs(object):
             if not os.path.exists(f):
                 raise BadKeyError("no public key supplied and no " + f)
             else:
-                pubkey = file(f).read()
+                pubkey = open(f, 'rb').read()
         elif not os.path.exists(pub):
             raise BadKeyError("file not found: " + pub)
         else:
-            pubkey = file(pub).read()
+            pubkey = open(pub, 'rb').read()
 
         self.pubkeys[uname] = strtopubkey(pubkey)
         return self.pubkeys[uname]
@@ -331,22 +357,23 @@ class AuthFs(object):
         fid.phase = self.HaveChal
         if not hasattr(fid, 'uname'):
             raise AuthError("no fid.uname")
-        fid.key = self.getpubkey(fid.uname,
-                self.keyfiles.get(fid.uname, None))
+        uname = fid.uname.decode('utf-8')
+        fid.key = self.getpubkey(uname,
+                self.keyfiles.get(uname, None))
         fid.chal = getchallenge()
 
     def read(self, srv, req):
         f = req.fid
         if f.phase == self.HaveChal:
             f.phase = self.NeedSign
-            req.ofcall.data = pickle.dumps(f.key.encrypt(f.chal, ''))
+            req.ofcall.data = pickle.dumps(f.key.encrypt(f.chal, ''), protocol=2)
             srv.respond(req, None)
             return
         elif f.phase == self.Success:
             req.ofcall.data = 'success as ' + f.suid
             srv.respond(req, None)
             return
-        raise py9p.ServerError("unexpected phase")
+        raise ServerError("unexpected phase")
 
     def write(self, srv, req):
         f = req.fid
@@ -360,8 +387,8 @@ class AuthFs(object):
                 srv.respond(req, None)
                 return
             else:
-                raise py9p.ServerError('signature not verified')
-        raise py9p.ServerError("unexpected phase")
+                raise ServerError('signature not verified')
+        raise ServerError("unexpected phase")
 
 
 def clientAuth(cl, fcall, credentials):
@@ -381,5 +408,5 @@ def clientAuth(cl, fcall, credentials):
     chal = credentials.key.decrypt(c)
     sign = credentials.key.sign(chal, '')
 
-    wr(pickle.dumps(sign))
+    wr(pickle.dumps(sign, protocol=2))
     return
