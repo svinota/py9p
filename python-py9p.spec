@@ -1,6 +1,6 @@
 Name: python-py9p
 Version: 1.0.9
-Release: 1%{?dist}
+Release: 2%{?dist}
 Summary: Pure Python implementation of 9P protocol (Plan9)
 License: MIT
 Group: Development/Languages
@@ -71,6 +71,9 @@ beta development state.
 
 
 %changelog
+* Wed Jun 12 2013 Peter V. Saveliev <peet@redhat.com> 1.0.9-2
+- fedpkg import fix
+
 * Wed Jun 12 2013 Peter V. Saveliev <peet@redhat.com> 1.0.9-1
 - symlink support
 - read/write improved
