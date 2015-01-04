@@ -3,4 +3,7 @@
 *~
 *swp
 _build
-
+MANIFEST
+dist/
+setup.py
+py9p/__init__.py
