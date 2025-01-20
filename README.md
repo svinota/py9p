@@ -1,3 +1,14 @@
+project EOL notice
+==================
+
+This project is no longer maintained. Plan9 9p2000 protocol implementation
+is completely rewritten and provided in `pyroute2`, see the links:
+
+ * project: https://github.com/svinota/pyroute2
+ * module: https://github.com/svinota/pyroute2/tree/master/pyroute2/plan9
+ * documentation and examples: https://docs.pyroute2.org/plan9.html
+
+
 py9p
 ====
 
